@@ -35,7 +35,7 @@ def create_editor_router(
     # ── Page ─────────────────────────────────────────────────────────
 
     @router.get("")
-    async def editor_page(request: Request):
+    async def editor_page(request: Request, session_id: Optional[str] = Query(None)):
         redirect = require_auth(request)
         if redirect:
             return redirect
@@ -46,6 +46,8 @@ def create_editor_router(
             "request": request,
             "user": get_current_user(request),
             "sessions": sessions,
+            "active_page": "editor",
+            "selected_session": session_id,
         })
 
     # ── API ──────────────────────────────────────────────────────────

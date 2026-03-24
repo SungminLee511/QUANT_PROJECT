@@ -102,7 +102,7 @@ def create_app(config: dict, redis: RedisClient, session_manager: SessionManager
     # ── Settings ─────────────────────────────────────────────────────
 
     from monitoring.settings import create_settings_router
-    app.include_router(create_settings_router(config, redis, templates))
+    app.include_router(create_settings_router(config, redis, templates, session_manager))
 
     # ── Sessions API ─────────────────────────────────────────────────
 

@@ -74,7 +74,8 @@ def _mask_key(value: str) -> str:
 
 
 def create_settings_router(
-    config: dict, redis: RedisClient, templates: Jinja2Templates
+    config: dict, redis: RedisClient, templates: Jinja2Templates,
+    session_manager=None,
 ) -> APIRouter:
     router = APIRouter(prefix="/settings")
 
@@ -83,9 +84,17 @@ def create_settings_router(
         redirect = require_auth(request)
         if redirect:
             return redirect
+        sessions = []
+        if session_manager:
+            sessions = await session_manager.get_all_sessions()
+            for s in sessions:
+                s["is_running"] = session_manager.is_running(s["id"])
         return templates.TemplateResponse("settings.html", {
             "request": request,
             "user": get_current_user(request),
+            "sessions": sessions,
+            "active_page": "settings",
+            "selected_session": None,
         })
 
     @router.get("/api/load")

@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Quant Trader{% endblock %}</title>
+    {% block head_extra %}{% endblock %}
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f1117; color: #e1e4e8; }
+        a { color: #58a6ff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        /* ── Top nav ─────────────────────────────────────── */
+        .nav { background: #161b22; border-bottom: 1px solid #30363d; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; position: fixed; top: 0; left: 0; right: 0; z-index: 100; height: 52px; }
+        .nav-left { display: flex; align-items: center; gap: 24px; }
+        .nav h1 { font-size: 18px; white-space: nowrap; }
+        .nav-links { display: flex; gap: 16px; font-size: 14px; }
+        .nav-links a.active { color: #e1e4e8; font-weight: 600; border-bottom: 2px solid #58a6ff; padding-bottom: 2px; }
+        .nav-right { display: flex; align-items: center; gap: 16px; font-size: 13px; color: #8b949e; }
+
+        /* ── Layout: sidebar + main ──────────────────────── */
+        .layout { display: flex; margin-top: 52px; min-height: calc(100vh - 52px); }
+
+        /* ── Sidebar ─────────────────────────────────────── */
+        .sidebar { width: 260px; min-width: 260px; background: #161b22; border-right: 1px solid #30363d; padding: 16px 0; overflow-y: auto; position: fixed; top: 52px; bottom: 0; left: 0; z-index: 50; }
+        .sidebar-header { padding: 0 16px 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #21262d; margin-bottom: 8px; }
+        .sidebar-header h2 { font-size: 12px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+        .sidebar-header .add-btn { background: #238636; color: white; border: none; border-radius: 6px; width: 26px; height: 26px; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; }
+        .sidebar-header .add-btn:hover { background: #2ea043; }
+
+        .session-item { padding: 10px 16px; cursor: pointer; border-left: 3px solid transparent; transition: background 0.15s; }
+        .session-item:hover { background: #1c2129; }
+        .session-item.active { background: #1c2129; border-left-color: #58a6ff; }
+        .session-item .s-name { font-size: 13px; font-weight: 600; margin-bottom: 2px; display: flex; justify-content: space-between; align-items: center; }
+        .session-item .s-meta { font-size: 11px; color: #8b949e; display: flex; gap: 8px; align-items: center; }
+        .session-item .s-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+        .session-item .s-dot.running { background: #3fb950; }
+        .session-item .s-dot.stopped { background: #484f58; }
+        .session-item .s-dot.error { background: #f85149; }
+        .session-item .s-type { background: #21262d; padding: 1px 6px; border-radius: 3px; font-size: 10px; color: #8b949e; }
+        .session-item .s-type.sim { color: #d29922; border: 1px solid #d2992233; }
+        .session-item .s-type.live { color: #f85149; border: 1px solid #f8514933; }
+
+        .sidebar-empty { padding: 24px 16px; text-align: center; color: #484f58; font-size: 13px; }
+
+        .sidebar-section { padding: 12px 16px 8px; }
+        .sidebar-section h3 { font-size: 11px; color: #484f58; text-transform: uppercase; letter-spacing: 0.5px; }
+
+        /* Global view link */
+        .session-item.global { border-left-color: transparent; }
+        .session-item.global.active { border-left-color: #d29922; }
+        .session-item.global .s-name { color: #d29922; }
+
+        /* ── Main content ────────────────────────────────── */
+        .main { flex: 1; margin-left: 260px; min-height: calc(100vh - 52px); }
+
+        /* ── Session create modal ────────────────────────── */
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 200; align-items: center; justify-content: center; }
+        .modal-overlay.show { display: flex; }
+        .modal { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; width: 460px; max-width: 90vw; }
+        .modal h2 { font-size: 16px; margin-bottom: 16px; }
+        .modal .field { margin-bottom: 14px; }
+        .modal .field label { display: block; font-size: 13px; color: #8b949e; margin-bottom: 5px; }
+        .modal .field input, .modal .field select { width: 100%; padding: 9px 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #e1e4e8; font-size: 13px; outline: none; }
+        .modal .field input:focus, .modal .field select:focus { border-color: #58a6ff; }
+        .modal .field .hint { font-size: 11px; color: #484f58; margin-top: 4px; }
+        .modal .btn-row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+        .modal .btn { padding: 8px 18px; border: 1px solid #30363d; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; background: #21262d; color: #e1e4e8; }
+        .modal .btn:hover { background: #30363d; }
+        .modal .btn-primary { background: #238636; border-color: #238636; color: white; }
+        .modal .btn-primary:hover { background: #2ea043; }
+        .modal .btn-danger { background: #da3633; border-color: #da3633; color: white; }
+        .modal .btn-danger:hover { background: #f85149; }
+
+        /* ── Session controls (inline in sidebar) ────────── */
+        .session-controls { display: none; padding: 6px 16px 10px; background: #1c2129; border-bottom: 1px solid #21262d; }
+        .session-controls.show { display: flex; gap: 6px; }
+        .session-controls .sc-btn { padding: 4px 10px; border: 1px solid #30363d; border-radius: 4px; cursor: pointer; font-size: 11px; background: #21262d; color: #8b949e; }
+        .session-controls .sc-btn:hover { background: #30363d; color: #e1e4e8; }
+        .session-controls .sc-btn.start { color: #3fb950; border-color: #23863644; }
+        .session-controls .sc-btn.stop { color: #f85149; border-color: #da363344; }
+        .session-controls .sc-btn.delete { color: #f85149; }
+
+        /* ── Toast notifications ─────────────────────────── */
+        .toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 20px; border-radius: 8px; font-size: 13px; font-weight: 600; display: none; z-index: 300; }
+        .toast.ok { background: #238636; color: white; }
+        .toast.err { background: #da3633; color: white; }
+
+        {% block extra_styles %}{% endblock %}
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <div class="nav-left">
+            <h1>Quant Trader</h1>
+            <div class="nav-links">
+                <a href="/" class="{% if active_page == 'dashboard' %}active{% endif %}">Dashboard</a>
+                <a href="/editor" class="{% if active_page == 'editor' %}active{% endif %}">Strategy Editor</a>
+                <a href="/settings" class="{% if active_page == 'settings' %}active{% endif %}">Settings</a>
+            </div>
+        </div>
+        <div class="nav-right">
+            {% block nav_right_extra %}{% endblock %}
+            <span>{{ user }}</span>
+            <a href="/logout">Logout</a>
+        </div>
+    </div>
+
+    <div class="layout">
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h2>Sessions</h2>
+                <button class="add-btn" onclick="showCreateModal()" title="New session">+</button>
+            </div>
+
+            <div class="sidebar-section"><h3>Overview</h3></div>
+            <div class="session-item global {% if not selected_session %}active{% endif %}" onclick="selectSession(null)">
+                <div class="s-name">All Sessions</div>
+                <div class="s-meta">Global view</div>
+            </div>
+
+            <div class="sidebar-section"><h3>Active Sessions</h3></div>
+            <div id="sessionList">
+                {% if sessions %}
+                    {% for s in sessions %}
+                    <div class="session-item {% if selected_session == s.id %}active{% endif %}"
+                         data-id="{{ s.id }}" onclick="selectSession('{{ s.id }}')">
+                        <div class="s-name">
+                            {{ s.name }}
+                            {% if s.is_simulation %}
+                            <span class="s-type sim">SIM</span>
+                            {% else %}
+                            <span class="s-type live">LIVE</span>
+                            {% endif %}
+                        </div>
+                        <div class="s-meta">
+                            <span class="s-dot {% if s.is_running %}running{% elif s.status == 'error' %}error{% else %}stopped{% endif %}"></span>
+                            {{ s.status | capitalize }}
+                            &middot; {{ s.symbols | join(', ') if s.symbols else 'No symbols' }}
+                        </div>
+                    </div>
+                    <div class="session-controls" id="controls-{{ s.id }}">
+                        {% if s.is_running %}
+                        <button class="sc-btn stop" onclick="event.stopPropagation(); stopSession('{{ s.id }}')">Stop</button>
+                        {% else %}
+                        <button class="sc-btn start" onclick="event.stopPropagation(); startSession('{{ s.id }}')">Start</button>
+                        {% endif %}
+                        <button class="sc-btn delete" onclick="event.stopPropagation(); deleteSession('{{ s.id }}', '{{ s.name }}')">Delete</button>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="sidebar-empty">No sessions yet.<br>Click + to create one.</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="main">
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+
+    <!-- Create Session Modal -->
+    <div class="modal-overlay" id="createModal">
+        <div class="modal">
+            <h2>Create New Session</h2>
+            <div class="field">
+                <label>Session Name</label>
+                <input type="text" id="newName" placeholder="e.g. BTC Momentum Sim" value="">
+            </div>
+            <div class="field">
+                <label>Session Type</label>
+                <select id="newType">
+                    <option value="binance_sim">Binance Simulation (Crypto)</option>
+                    <option value="alpaca_sim">Alpaca Simulation (US Stocks)</option>
+                    <option value="binance">Binance Live (Crypto)</option>
+                    <option value="alpaca">Alpaca Live (US Stocks)</option>
+                </select>
+                <div class="hint">Simulation uses real market data but fake money. No API keys needed.</div>
+            </div>
+            <div class="field">
+                <label>Symbols (comma-separated)</label>
+                <input type="text" id="newSymbols" placeholder="BTCUSDT, ETHUSDT" value="BTCUSDT">
+            </div>
+            <div class="field">
+                <label>Starting Budget ($)</label>
+                <input type="text" id="newBudget" placeholder="10000" value="10000">
+            </div>
+            <div id="liveKeyFields" style="display:none;">
+                <div class="field">
+                    <label>API Key</label>
+                    <input type="text" id="newApiKey" placeholder="Exchange API key">
+                </div>
+                <div class="field">
+                    <label>API Secret</label>
+                    <input type="password" id="newApiSecret" placeholder="Exchange API secret">
+                </div>
+            </div>
+            <div class="btn-row">
+                <button class="btn" onclick="hideCreateModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="createSession()">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+        // ── Session state ───────────────────────────────────
+        let currentSessionId = {{ selected_session | tojson | default('null') }};
+
+        function getSessionParam() {
+            return currentSessionId ? `?session_id=${currentSessionId}` : '';
+        }
+
+        // ── Toast ───────────────────────────────────────────
+        function showToast(msg, ok) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'toast ' + (ok ? 'ok' : 'err');
+            t.style.display = 'block';
+            setTimeout(() => t.style.display = 'none', 3000);
+        }
+
+        // ── Session selection ───────────────────────────────
+        function selectSession(id) {
+            currentSessionId = id;
+            // Update URL without reload
+            const url = new URL(window.location);
+            if (id) {
+                url.searchParams.set('session_id', id);
+            } else {
+                url.searchParams.delete('session_id');
+            }
+            window.history.pushState({}, '', url);
+
+            // Update sidebar active state
+            document.querySelectorAll('.session-item').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.session-controls').forEach(el => el.classList.remove('show'));
+            if (id) {
+                const item = document.querySelector(`.session-item[data-id="${id}"]`);
+                if (item) {
+                    item.classList.add('active');
+                    const ctrl = document.getElementById(`controls-${id}`);
+                    if (ctrl) ctrl.classList.add('show');
+                }
+            } else {
+                document.querySelector('.session-item.global').classList.add('active');
+            }
+
+            // Notify page-specific handler
+            if (typeof onSessionChange === 'function') {
+                onSessionChange(id);
+            }
+        }
+
+        // ── Create modal ────────────────────────────────────
+        function showCreateModal() {
+            document.getElementById('createModal').classList.add('show');
+        }
+        function hideCreateModal() {
+            document.getElementById('createModal').classList.remove('show');
+        }
+
+        // Show/hide API key fields based on session type
+        document.getElementById('newType').addEventListener('change', function() {
+            const isLive = this.value === 'binance' || this.value === 'alpaca';
+            document.getElementById('liveKeyFields').style.display = isLive ? 'block' : 'none';
+            // Update symbol placeholder
+            const symInput = document.getElementById('newSymbols');
+            if (this.value.includes('alpaca')) {
+                symInput.placeholder = 'AAPL, MSFT, TSLA';
+                symInput.value = symInput.value || 'AAPL';
+            } else {
+                symInput.placeholder = 'BTCUSDT, ETHUSDT';
+                symInput.value = symInput.value || 'BTCUSDT';
+            }
+        });
+
+        // ── Session CRUD ────────────────────────────────────
+        async function createSession() {
+            const name = document.getElementById('newName').value.trim();
+            const sessionType = document.getElementById('newType').value;
+            const symbolsStr = document.getElementById('newSymbols').value.trim();
+            const budget = parseFloat(document.getElementById('newBudget').value) || 10000;
+            const apiKey = document.getElementById('newApiKey').value.trim();
+            const apiSecret = document.getElementById('newApiSecret').value.trim();
+
+            if (!name) { showToast('Please enter a session name', false); return; }
+            if (!symbolsStr) { showToast('Please enter at least one symbol', false); return; }
+
+            const symbols = symbolsStr.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+
+            try {
+                const res = await fetch('/api/sessions', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        name, session_type: sessionType, symbols,
+                        starting_budget: budget,
+                        api_key: apiKey, api_secret: apiSecret,
+                    })
+                });
+                const data = await res.json();
+                if (data.created) {
+                    showToast(`Session "${name}" created`, true);
+                    hideCreateModal();
+                    setTimeout(() => location.reload(), 500);
+                } else {
+                    showToast('Failed: ' + (data.error || 'Unknown error'), false);
+                }
+            } catch(e) {
+                showToast('Error: ' + e.message, false);
+            }
+        }
+
+        async function startSession(id) {
+            try {
+                const res = await fetch(`/api/sessions/${id}/start`, { method: 'POST' });
+                const data = await res.json();
+                if (data.started) {
+                    showToast('Session started', true);
+                    setTimeout(() => location.reload(), 500);
+                } else {
+                    showToast('Failed to start session', false);
+                }
+            } catch(e) { showToast('Error: ' + e.message, false); }
+        }
+
+        async function stopSession(id) {
+            try {
+                const res = await fetch(`/api/sessions/${id}/stop`, { method: 'POST' });
+                const data = await res.json();
+                if (data.stopped) {
+                    showToast('Session stopped', true);
+                    setTimeout(() => location.reload(), 500);
+                } else {
+                    showToast('Failed to stop session', false);
+                }
+            } catch(e) { showToast('Error: ' + e.message, false); }
+        }
+
+        async function deleteSession(id, name) {
+            if (!confirm(`Delete session "${name}"? This removes all trades, orders, and history.`)) return;
+            try {
+                const res = await fetch(`/api/sessions/${id}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (data.deleted) {
+                    showToast(`Session "${name}" deleted`, true);
+                    if (currentSessionId === id) currentSessionId = null;
+                    setTimeout(() => location.reload(), 500);
+                } else {
+                    showToast('Failed to delete session', false);
+                }
+            } catch(e) { showToast('Error: ' + e.message, false); }
+        }
+
+        // ── Init: read session_id from URL ──────────────────
+        (function() {
+            const params = new URLSearchParams(window.location.search);
+            const sid = params.get('session_id');
+            if (sid && sid !== currentSessionId) {
+                selectSession(sid);
+            }
+        })();
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,178 +1,145 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Settings — Quant Trader</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f1117; color: #e1e4e8; }
-        a { color: #58a6ff; text-decoration: none; }
-        a:hover { text-decoration: underline; }
-        .nav { background: #161b22; border-bottom: 1px solid #30363d; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; }
-        .nav-left { display: flex; align-items: center; gap: 24px; }
-        .nav h1 { font-size: 18px; }
-        .nav-links { display: flex; gap: 16px; font-size: 14px; }
-        .nav-links a.active { color: #e1e4e8; font-weight: 600; border-bottom: 2px solid #58a6ff; padding-bottom: 2px; }
-        .nav-right { display: flex; align-items: center; gap: 16px; font-size: 13px; color: #8b949e; }
+{% extends "base.html" %}
 
-        .content { max-width: 640px; margin: 0 auto; padding: 32px 24px; }
-        .section { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 24px; margin-bottom: 20px; }
-        .section h2 { font-size: 15px; margin-bottom: 4px; }
-        .section p { font-size: 12px; color: #8b949e; margin-bottom: 16px; }
-        .field { margin-bottom: 14px; }
-        .field label { display: block; font-size: 13px; color: #8b949e; margin-bottom: 5px; }
-        .field input[type="text"], .field input[type="password"] {
-            width: 100%; padding: 9px 12px; background: #0d1117; border: 1px solid #30363d;
-            border-radius: 6px; color: #e1e4e8; font-size: 13px; font-family: 'SF Mono', Monaco, Consolas, monospace; outline: none;
-        }
-        .field input:focus { border-color: #58a6ff; }
-        .toggle-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
-        .toggle-row label { font-size: 13px; color: #e1e4e8; cursor: pointer; }
-        .toggle { position: relative; width: 40px; height: 22px; }
-        .toggle input { opacity: 0; width: 0; height: 0; }
-        .toggle .slider { position: absolute; inset: 0; background: #30363d; border-radius: 22px; cursor: pointer; transition: 0.2s; }
-        .toggle .slider::before { content: ''; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #8b949e; border-radius: 50%; transition: 0.2s; }
-        .toggle input:checked + .slider { background: #238636; }
-        .toggle input:checked + .slider::before { transform: translateX(18px); background: white; }
-        .hint { font-size: 11px; color: #484f58; margin-top: 4px; }
+{% block title %}Settings — Quant Trader{% endblock %}
 
-        .btn { padding: 9px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; }
-        .btn-primary { background: #238636; color: white; }
-        .btn-primary:hover { background: #2ea043; }
-        .btn-row { display: flex; gap: 12px; align-items: center; }
+{% block extra_styles %}
+.content { max-width: 640px; margin: 0 auto; padding: 32px 24px; }
+.section { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 24px; margin-bottom: 20px; }
+.section h2 { font-size: 15px; margin-bottom: 4px; }
+.section p { font-size: 12px; color: #8b949e; margin-bottom: 16px; }
+.field { margin-bottom: 14px; }
+.field label { display: block; font-size: 13px; color: #8b949e; margin-bottom: 5px; }
+.field input[type="text"], .field input[type="password"] {
+    width: 100%; padding: 9px 12px; background: #0d1117; border: 1px solid #30363d;
+    border-radius: 6px; color: #e1e4e8; font-size: 13px; font-family: 'SF Mono', Monaco, Consolas, monospace; outline: none;
+}
+.field input:focus { border-color: #58a6ff; }
+.toggle-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.toggle-row label { font-size: 13px; color: #e1e4e8; cursor: pointer; }
+.toggle { position: relative; width: 40px; height: 22px; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle .slider { position: absolute; inset: 0; background: #30363d; border-radius: 22px; cursor: pointer; transition: 0.2s; }
+.toggle .slider::before { content: ''; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #8b949e; border-radius: 50%; transition: 0.2s; }
+.toggle input:checked + .slider { background: #238636; }
+.toggle input:checked + .slider::before { transform: translateX(18px); background: white; }
+.hint { font-size: 11px; color: #484f58; margin-top: 4px; }
 
-        .toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 20px; border-radius: 8px; font-size: 13px; font-weight: 600; display: none; z-index: 100; }
-        .toast.ok { background: #238636; color: white; }
-        .toast.err { background: #da3633; color: white; }
+.btn { padding: 9px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; }
+.btn-primary { background: #238636; color: white; }
+.btn-primary:hover { background: #2ea043; }
+.btn-row { display: flex; gap: 12px; align-items: center; }
 
-        .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
-        .status-dot.on { background: #3fb950; }
-        .status-dot.off { background: #484f58; }
-    </style>
-</head>
-<body>
-    <div class="nav">
-        <div class="nav-left">
-            <h1>Quant Trader</h1>
-            <div class="nav-links">
-                <a href="/">Dashboard</a>
-                <a href="/editor">Strategy Editor</a>
-                <a href="/settings" class="active">Settings</a>
-            </div>
-        </div>
-        <div class="nav-right">
-            <span>{{ user }}</span>
-            <a href="/logout">Logout</a>
-        </div>
+.status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+.status-dot.on { background: #3fb950; }
+.status-dot.off { background: #484f58; }
+{% endblock %}
+
+{% block content %}
+<div class="content">
+    <div class="section">
+        <h2>Global API Keys</h2>
+        <p>These are fallback API keys used when a session doesn't have its own keys. Per-session keys are set when creating a live session.</p>
     </div>
 
-    <div class="content">
-        <div class="section">
-            <h2>Binance <span id="binanceStatus"><span class="status-dot off"></span>Not configured</span></h2>
-            <p>Crypto trading via Binance. Use testnet keys for development.</p>
-            <div class="field">
-                <label>API Key</label>
-                <input type="text" id="binanceKey" placeholder="Enter Binance API key">
-            </div>
-            <div class="field">
-                <label>API Secret</label>
-                <input type="password" id="binanceSecret" placeholder="Enter Binance API secret">
-            </div>
-            <div class="toggle-row">
-                <div class="toggle">
-                    <input type="checkbox" id="binanceTestnet" checked>
-                    <span class="slider"></span>
-                </div>
-                <label for="binanceTestnet">Testnet mode</label>
-            </div>
-            <div class="hint">Testnet uses fake money. Turn off only when ready for real trading.</div>
+    <div class="section">
+        <h2>Binance <span id="binanceStatus"><span class="status-dot off"></span>Not configured</span></h2>
+        <p>Crypto trading via Binance. Use testnet keys for development.</p>
+        <div class="field">
+            <label>API Key</label>
+            <input type="text" id="binanceKey" placeholder="Enter Binance API key">
         </div>
-
-        <div class="section">
-            <h2>Alpaca <span id="alpacaStatus"><span class="status-dot off"></span>Not configured</span></h2>
-            <p>US equities trading via Alpaca. Use paper trading keys for development.</p>
-            <div class="field">
-                <label>API Key</label>
-                <input type="text" id="alpacaKey" placeholder="Enter Alpaca API key">
-            </div>
-            <div class="field">
-                <label>API Secret</label>
-                <input type="password" id="alpacaSecret" placeholder="Enter Alpaca API secret">
-            </div>
-            <div class="toggle-row">
-                <div class="toggle">
-                    <input type="checkbox" id="alpacaPaper" checked>
-                    <span class="slider"></span>
-                </div>
-                <label for="alpacaPaper">Paper trading mode</label>
-            </div>
-            <div class="hint">Paper trading uses fake money. Turn off only when ready for real trading.</div>
+        <div class="field">
+            <label>API Secret</label>
+            <input type="password" id="binanceSecret" placeholder="Enter Binance API secret">
         </div>
-
-        <div class="btn-row">
-            <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+        <div class="toggle-row">
+            <div class="toggle">
+                <input type="checkbox" id="binanceTestnet" checked>
+                <span class="slider"></span>
+            </div>
+            <label for="binanceTestnet">Testnet mode</label>
         </div>
+        <div class="hint">Testnet uses fake money. Turn off only when ready for real trading.</div>
     </div>
 
-    <div id="toast" class="toast"></div>
+    <div class="section">
+        <h2>Alpaca <span id="alpacaStatus"><span class="status-dot off"></span>Not configured</span></h2>
+        <p>US equities trading via Alpaca. Use paper trading keys for development.</p>
+        <div class="field">
+            <label>API Key</label>
+            <input type="text" id="alpacaKey" placeholder="Enter Alpaca API key">
+        </div>
+        <div class="field">
+            <label>API Secret</label>
+            <input type="password" id="alpacaSecret" placeholder="Enter Alpaca API secret">
+        </div>
+        <div class="toggle-row">
+            <div class="toggle">
+                <input type="checkbox" id="alpacaPaper" checked>
+                <span class="slider"></span>
+            </div>
+            <label for="alpacaPaper">Paper trading mode</label>
+        </div>
+        <div class="hint">Paper trading uses fake money. Turn off only when ready for real trading.</div>
+    </div>
 
-    <script>
-        function showToast(msg, ok) {
-            const t = document.getElementById('toast');
-            t.textContent = msg;
-            t.className = 'toast ' + (ok ? 'ok' : 'err');
-            t.style.display = 'block';
-            setTimeout(() => t.style.display = 'none', 3000);
-        }
+    <div class="btn-row">
+        <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+    </div>
+</div>
+{% endblock %}
 
-        async function loadSettings() {
-            try {
-                const res = await fetch('/settings/api/load');
-                const d = await res.json();
-                document.getElementById('binanceKey').value = d.binance_api_key || '';
-                document.getElementById('binanceSecret').value = d.binance_api_secret || '';
-                document.getElementById('alpacaKey').value = d.alpaca_api_key || '';
-                document.getElementById('alpacaSecret').value = d.alpaca_api_secret || '';
-                document.getElementById('binanceTestnet').checked = d.binance_testnet !== false;
-                document.getElementById('alpacaPaper').checked = d.alpaca_paper !== false;
+{% block scripts %}
+<script>
+    async function loadSettings() {
+        try {
+            const res = await fetch('/settings/api/load');
+            const d = await res.json();
+            document.getElementById('binanceKey').value = d.binance_api_key || '';
+            document.getElementById('binanceSecret').value = d.binance_api_secret || '';
+            document.getElementById('alpacaKey').value = d.alpaca_api_key || '';
+            document.getElementById('alpacaSecret').value = d.alpaca_api_secret || '';
+            document.getElementById('binanceTestnet').checked = d.binance_testnet !== false;
+            document.getElementById('alpacaPaper').checked = d.alpaca_paper !== false;
 
-                document.getElementById('binanceStatus').innerHTML = d.has_binance
-                    ? '<span class="status-dot on"></span>Configured'
-                    : '<span class="status-dot off"></span>Not configured';
-                document.getElementById('alpacaStatus').innerHTML = d.has_alpaca
-                    ? '<span class="status-dot on"></span>Configured'
-                    : '<span class="status-dot off"></span>Not configured';
-            } catch(e) { console.error(e); }
-        }
+            document.getElementById('binanceStatus').innerHTML = d.has_binance
+                ? '<span class="status-dot on"></span>Configured'
+                : '<span class="status-dot off"></span>Not configured';
+            document.getElementById('alpacaStatus').innerHTML = d.has_alpaca
+                ? '<span class="status-dot on"></span>Configured'
+                : '<span class="status-dot off"></span>Not configured';
+        } catch(e) { console.error(e); }
+    }
 
-        async function saveSettings() {
-            const body = {
-                binance_api_key: document.getElementById('binanceKey').value,
-                binance_api_secret: document.getElementById('binanceSecret').value,
-                alpaca_api_key: document.getElementById('alpacaKey').value,
-                alpaca_api_secret: document.getElementById('alpacaSecret').value,
-                binance_testnet: document.getElementById('binanceTestnet').checked,
-                alpaca_paper: document.getElementById('alpacaPaper').checked,
-            };
-            try {
-                const res = await fetch('/settings/api/save', {
-                    method: 'POST', headers: {'Content-Type':'application/json'},
-                    body: JSON.stringify(body)
-                });
-                const d = await res.json();
-                if (d.saved) {
-                    showToast(d.message, true);
-                    loadSettings();
-                } else {
-                    showToast('Save failed', false);
-                }
-            } catch(e) {
-                showToast('Error: ' + e.message, false);
+    async function saveSettings() {
+        const body = {
+            binance_api_key: document.getElementById('binanceKey').value,
+            binance_api_secret: document.getElementById('binanceSecret').value,
+            alpaca_api_key: document.getElementById('alpacaKey').value,
+            alpaca_api_secret: document.getElementById('alpacaSecret').value,
+            binance_testnet: document.getElementById('binanceTestnet').checked,
+            alpaca_paper: document.getElementById('alpacaPaper').checked,
+        };
+        try {
+            const res = await fetch('/settings/api/save', {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify(body)
+            });
+            const d = await res.json();
+            if (d.saved) {
+                showToast(d.message, true);
+                loadSettings();
+            } else {
+                showToast('Save failed', false);
             }
+        } catch(e) {
+            showToast('Error: ' + e.message, false);
         }
+    }
 
-        loadSettings();
-    </script>
-</body>
-</html>
+    // No-op for session change on settings page
+    function onSessionChange(sessionId) {}
+
+    loadSettings();
+</script>
+{% endblock %}

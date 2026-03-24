@@ -29,50 +29,10 @@ services:
       timeout: 5s
       retries: 5
 
-  data-feed:
-    build: .
-    command: python -m scripts.run_data
-    env_file: .env
-    environment:
-      QT_ENV: prod
-      QT_REDIS_HOST: redis
-      QT_DATABASE_HOST: postgres
-    depends_on:
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-
-  strategy:
-    build: .
-    command: python -m scripts.run_strategy
-    env_file: .env
-    environment:
-      QT_ENV: prod
-      QT_REDIS_HOST: redis
-      QT_DATABASE_HOST: postgres
-    depends_on:
-      redis:
-        condition: service_healthy
-      data-feed:
-        condition: service_started
-    restart: unless-stopped
-
-  execution:
-    build: .
-    command: python -m scripts.run_execution
-    env_file: .env
-    environment:
-      QT_ENV: prod
-      QT_REDIS_HOST: redis
-      QT_DATABASE_HOST: postgres
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-
-  monitor:
+  # Unified engine + web UI. SessionManager orchestrates all trading pipelines
+  # (data feed, strategy, risk, execution, portfolio) per session as asyncio tasks.
+  # Previously active sessions are auto-restarted on startup.
+  engine:
     build: .
     command: python -m scripts.run_monitor
     env_file: .env

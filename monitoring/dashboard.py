@@ -43,7 +43,7 @@ def create_dashboard_router(
     # ── Pages ────────────────────────────────────────────────────────
 
     @router.get("/")
-    async def index(request: Request):
+    async def index(request: Request, session_id: Optional[str] = Query(None)):
         redirect = require_auth(request)
         if redirect:
             return redirect
@@ -55,6 +55,8 @@ def create_dashboard_router(
             "request": request,
             "user": get_current_user(request),
             "sessions": sessions,
+            "active_page": "dashboard",
+            "selected_session": session_id,
         })
 
     # ── API ──────────────────────────────────────────────────────────

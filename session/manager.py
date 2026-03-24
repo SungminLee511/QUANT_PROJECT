@@ -264,7 +264,7 @@ class SessionManager:
         pipeline.strategy_engine = engine
 
         # 3. Risk manager (session-aware)
-        risk_mgr = RiskManager(session_config, self._redis)
+        risk_mgr = RiskManager(session_config, self._redis, session_id=sid)
         pipeline.risk_manager = risk_mgr
 
         # 4. Order router — sim or real

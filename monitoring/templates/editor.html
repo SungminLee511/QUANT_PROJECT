@@ -1,190 +1,198 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Strategy Editor — Quant Trader</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f1117; color: #e1e4e8; display: flex; flex-direction: column; height: 100vh; }
-        a { color: #58a6ff; text-decoration: none; }
-        a:hover { text-decoration: underline; }
-        .nav { background: #161b22; border-bottom: 1px solid #30363d; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
-        .nav-left { display: flex; align-items: center; gap: 24px; }
-        .nav h1 { font-size: 18px; }
-        .nav-links { display: flex; gap: 16px; font-size: 14px; }
-        .nav-links a.active { color: #e1e4e8; font-weight: 600; border-bottom: 2px solid #58a6ff; padding-bottom: 2px; }
-        .nav-right { display: flex; align-items: center; gap: 16px; font-size: 13px; color: #8b949e; }
+{% extends "base.html" %}
 
-        .editor-container { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-        .toolbar { background: #161b22; border-bottom: 1px solid #30363d; padding: 10px 24px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
-        .toolbar .btn { padding: 7px 16px; border: 1px solid #30363d; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; background: #21262d; color: #e1e4e8; }
-        .toolbar .btn:hover { background: #30363d; }
-        .toolbar .btn-primary { background: #238636; border-color: #238636; color: white; }
-        .toolbar .btn-primary:hover { background: #2ea043; }
-        .toolbar .btn-warn { background: #d29922; border-color: #d29922; color: #0f1117; }
-        .toolbar .btn-warn:hover { background: #e3b341; }
-        .toolbar .spacer { flex: 1; }
-        .toolbar .status { font-size: 12px; padding: 4px 10px; border-radius: 4px; }
-        .toolbar .status.ok { background: #23863622; color: #3fb950; border: 1px solid #23863644; }
-        .toolbar .status.err { background: #da363322; color: #f85149; border: 1px solid #da363344; }
-        .toolbar .status.idle { background: #30363d; color: #8b949e; }
+{% block title %}Strategy Editor — Quant Trader{% endblock %}
 
-        .code-area { flex: 1; overflow: hidden; }
-        .CodeMirror { height: 100% !important; font-size: 14px; }
+{% block head_extra %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
+{% endblock %}
 
-        .feedback { background: #161b22; border-top: 1px solid #30363d; padding: 12px 24px; max-height: 160px; overflow-y: auto; flex-shrink: 0; font-size: 13px; font-family: 'SF Mono', Monaco, Consolas, monospace; }
-        .feedback .err-line { color: #f85149; margin: 2px 0; }
-        .feedback .warn-line { color: #d29922; margin: 2px 0; }
-        .feedback .ok-line { color: #3fb950; margin: 2px 0; }
+{% block extra_styles %}
+.editor-container { display: flex; flex-direction: column; height: calc(100vh - 52px); overflow: hidden; }
+.toolbar { background: #161b22; border-bottom: 1px solid #30363d; padding: 10px 24px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.toolbar .btn { padding: 7px 16px; border: 1px solid #30363d; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; background: #21262d; color: #e1e4e8; }
+.toolbar .btn:hover { background: #30363d; }
+.toolbar .btn-primary { background: #238636; border-color: #238636; color: white; }
+.toolbar .btn-primary:hover { background: #2ea043; }
+.toolbar .btn-warn { background: #d29922; border-color: #d29922; color: #0f1117; }
+.toolbar .btn-warn:hover { background: #e3b341; }
+.toolbar .spacer { flex: 1; }
+.toolbar .status { font-size: 12px; padding: 4px 10px; border-radius: 4px; }
+.toolbar .status.ok { background: #23863622; color: #3fb950; border: 1px solid #23863644; }
+.toolbar .status.err { background: #da363322; color: #f85149; border: 1px solid #da363344; }
+.toolbar .status.idle { background: #30363d; color: #8b949e; }
+.toolbar .session-label { font-size: 12px; color: #8b949e; background: #21262d; padding: 4px 10px; border-radius: 4px; }
+.toolbar .session-label .name { color: #d29922; font-weight: 600; }
 
-        .contract { background: #161b22; border-top: 1px solid #30363d; padding: 10px 24px; font-size: 12px; color: #484f58; flex-shrink: 0; }
-        .contract code { color: #8b949e; background: #21262d; padding: 1px 4px; border-radius: 3px; }
-    </style>
-</head>
-<body>
-    <div class="nav">
-        <div class="nav-left">
-            <h1>Quant Trader</h1>
-            <div class="nav-links">
-                <a href="/">Dashboard</a>
-                <a href="/editor" class="active">Strategy Editor</a>
-                <a href="/settings">Settings</a>
-            </div>
-        </div>
-        <div class="nav-right">
-            <span>{{ user }}</span>
-            <a href="/logout">Logout</a>
-        </div>
+.code-area { flex: 1; overflow: hidden; }
+.CodeMirror { height: 100% !important; font-size: 14px; }
+
+.feedback { background: #161b22; border-top: 1px solid #30363d; padding: 12px 24px; max-height: 160px; overflow-y: auto; flex-shrink: 0; font-size: 13px; font-family: 'SF Mono', Monaco, Consolas, monospace; }
+.feedback .err-line { color: #f85149; margin: 2px 0; }
+.feedback .warn-line { color: #d29922; margin: 2px 0; }
+.feedback .ok-line { color: #3fb950; margin: 2px 0; }
+
+.contract { background: #161b22; border-top: 1px solid #30363d; padding: 10px 24px; font-size: 12px; color: #484f58; flex-shrink: 0; }
+.contract code { color: #8b949e; background: #21262d; padding: 1px 4px; border-radius: 3px; }
+
+.no-session-notice { padding: 40px 24px; text-align: center; color: #484f58; }
+.no-session-notice h3 { color: #8b949e; margin-bottom: 8px; }
+{% endblock %}
+
+{% block content %}
+<div class="editor-container">
+    <div class="toolbar">
+        <button class="btn" onclick="validateCode()">Validate</button>
+        <button class="btn btn-primary" onclick="deployCode()">Deploy</button>
+        <button class="btn btn-warn" onclick="resetCode()">Reset to Default</button>
+        <div class="spacer"></div>
+        <span id="sessionLabel" class="session-label" style="display:none;">
+            Editing for: <span class="name" id="editorSessionName"></span>
+        </span>
+        <span id="statusBadge" class="status idle">Ready</span>
     </div>
 
-    <div class="editor-container">
-        <div class="toolbar">
-            <button class="btn" onclick="validateCode()">Validate</button>
-            <button class="btn btn-primary" onclick="deployCode()">Deploy</button>
-            <button class="btn btn-warn" onclick="resetCode()">Reset to Default</button>
-            <div class="spacer"></div>
-            <span id="statusBadge" class="status idle">Ready</span>
-        </div>
-
-        <div class="code-area">
-            <textarea id="codeEditor"></textarea>
-        </div>
-
-        <div id="feedback" class="feedback" style="display:none;"></div>
-
-        <div class="contract">
-            <strong>Contract:</strong> Your class must subclass <code>BaseStrategy</code>.
-            Required: <code>async def on_tick(self, tick: MarketTick) -> TradeSignal | None</code>
-            and <code>async def on_bar(self, bar: OHLCVBar) -> TradeSignal | None</code>.
-            Allowed imports: math, statistics, collections, numpy, pandas, shared.enums, shared.schemas, strategy.base.
-        </div>
+    <div class="code-area">
+        <textarea id="codeEditor"></textarea>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
-    <script>
-        let editor;
+    <div id="feedback" class="feedback" style="display:none;"></div>
 
-        async function init() {
-            editor = CodeMirror.fromTextArea(document.getElementById('codeEditor'), {
-                mode: 'python',
-                theme: 'material-darker',
-                lineNumbers: true,
-                indentUnit: 4,
-                tabSize: 4,
-                indentWithTabs: false,
-                extraKeys: { Tab: (cm) => cm.replaceSelection('    ', 'end') }
+    <div class="contract">
+        <strong>Contract:</strong> Your class must subclass <code>BaseStrategy</code>.
+        Required: <code>async def on_tick(self, tick: MarketTick) -> TradeSignal | None</code>
+        and <code>async def on_bar(self, bar: OHLCVBar) -> TradeSignal | None</code>.
+        Allowed imports: math, statistics, collections, numpy, pandas, shared.enums, shared.schemas, strategy.base.
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+<script>
+    let editor;
+
+    async function init() {
+        editor = CodeMirror.fromTextArea(document.getElementById('codeEditor'), {
+            mode: 'python',
+            theme: 'material-darker',
+            lineNumbers: true,
+            indentUnit: 4,
+            tabSize: 4,
+            indentWithTabs: false,
+            extraKeys: { Tab: (cm) => cm.replaceSelection('    ', 'end') }
+        });
+        await loadStrategy();
+        updateEditorLabel();
+    }
+
+    function updateEditorLabel() {
+        const label = document.getElementById('sessionLabel');
+        if (currentSessionId) {
+            const item = document.querySelector(`.session-item[data-id="${currentSessionId}"] .s-name`);
+            const name = item ? item.firstChild.textContent.trim() : currentSessionId;
+            document.getElementById('editorSessionName').textContent = name;
+            label.style.display = 'inline';
+        } else {
+            label.style.display = 'none';
+        }
+    }
+
+    function setStatus(text, cls) {
+        const badge = document.getElementById('statusBadge');
+        badge.textContent = text;
+        badge.className = 'status ' + cls;
+    }
+
+    function showFeedback(lines) {
+        const fb = document.getElementById('feedback');
+        if (lines.length === 0) { fb.style.display = 'none'; return; }
+        fb.style.display = 'block';
+        fb.innerHTML = lines.join('');
+    }
+
+    async function loadStrategy() {
+        try {
+            const q = getSessionParam();
+            const res = await fetch('/editor/api/load' + q);
+            const data = await res.json();
+            editor.setValue(data.code || '');
+            const src = data.source === 'session' ? 'Session strategy' : data.source === 'user' ? 'User strategy' : 'Default strategy';
+            setStatus(src + ' loaded', 'idle');
+        } catch(e) {
+            console.error('Load error:', e);
+        }
+    }
+
+    async function validateCode() {
+        setStatus('Validating...', 'idle');
+        const code = editor.getValue();
+        try {
+            const res = await fetch('/editor/api/validate', {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({ code })
             });
-
-            // Load current strategy
-            try {
-                const res = await fetch('/editor/api/load');
-                const data = await res.json();
-                editor.setValue(data.code || '');
-                setStatus(data.source === 'user' ? 'User strategy loaded' : 'Default strategy loaded', 'idle');
-            } catch(e) {
-                console.error('Load error:', e);
+            const data = await res.json();
+            const lines = [];
+            if (data.valid) {
+                lines.push(`<div class="ok-line">&#10003; Valid — class "${data.class_name}" passes all checks</div>`);
+                setStatus('Valid', 'ok');
+            } else {
+                setStatus('Errors found', 'err');
             }
+            (data.errors||[]).forEach(e => lines.push(`<div class="err-line">&#10007; ${e}</div>`));
+            (data.warnings||[]).forEach(w => lines.push(`<div class="warn-line">&#9888; ${w}</div>`));
+            showFeedback(lines);
+        } catch(e) {
+            setStatus('Error', 'err');
+            showFeedback([`<div class="err-line">Network error: ${e.message}</div>`]);
         }
+    }
 
-        function setStatus(text, cls) {
-            const badge = document.getElementById('statusBadge');
-            badge.textContent = text;
-            badge.className = 'status ' + cls;
-        }
-
-        function showFeedback(lines) {
-            const fb = document.getElementById('feedback');
-            if (lines.length === 0) { fb.style.display = 'none'; return; }
-            fb.style.display = 'block';
-            fb.innerHTML = lines.join('');
-        }
-
-        async function validateCode() {
-            setStatus('Validating...', 'idle');
-            const code = editor.getValue();
-            try {
-                const res = await fetch('/editor/api/validate', {
-                    method: 'POST', headers: {'Content-Type':'application/json'},
-                    body: JSON.stringify({ code })
-                });
-                const data = await res.json();
-                const lines = [];
-                if (data.valid) {
-                    lines.push(`<div class="ok-line">&#10003; Valid — class "${data.class_name}" passes all checks</div>`);
-                    setStatus('Valid', 'ok');
-                } else {
-                    setStatus('Errors found', 'err');
-                }
+    async function deployCode() {
+        setStatus('Deploying...', 'idle');
+        const code = editor.getValue();
+        const q = getSessionParam();
+        try {
+            const res = await fetch('/editor/api/deploy' + q, {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({ code, session_id: currentSessionId })
+            });
+            const data = await res.json();
+            const lines = [];
+            if (data.deployed) {
+                lines.push(`<div class="ok-line">&#10003; ${data.message}</div>`);
+                setStatus('Deployed', 'ok');
+            } else {
+                setStatus('Deploy failed', 'err');
                 (data.errors||[]).forEach(e => lines.push(`<div class="err-line">&#10007; ${e}</div>`));
-                (data.warnings||[]).forEach(w => lines.push(`<div class="warn-line">&#9888; ${w}</div>`));
-                showFeedback(lines);
-            } catch(e) {
-                setStatus('Error', 'err');
-                showFeedback([`<div class="err-line">Network error: ${e.message}</div>`]);
             }
+            showFeedback(lines);
+        } catch(e) {
+            setStatus('Error', 'err');
+            showFeedback([`<div class="err-line">Network error: ${e.message}</div>`]);
         }
+    }
 
-        async function deployCode() {
-            setStatus('Deploying...', 'idle');
-            const code = editor.getValue();
-            try {
-                const res = await fetch('/editor/api/deploy', {
-                    method: 'POST', headers: {'Content-Type':'application/json'},
-                    body: JSON.stringify({ code })
-                });
-                const data = await res.json();
-                const lines = [];
-                if (data.deployed) {
-                    lines.push(`<div class="ok-line">&#10003; ${data.message}</div>`);
-                    setStatus('Deployed', 'ok');
-                } else {
-                    setStatus('Deploy failed', 'err');
-                    (data.errors||[]).forEach(e => lines.push(`<div class="err-line">&#10007; ${e}</div>`));
-                }
-                showFeedback(lines);
-            } catch(e) {
-                setStatus('Error', 'err');
-                showFeedback([`<div class="err-line">Network error: ${e.message}</div>`]);
-            }
+    async function resetCode() {
+        try {
+            const res = await fetch('/editor/api/reset', { method: 'POST' });
+            const data = await res.json();
+            editor.setValue(data.code || '');
+            setStatus('Reset to default', 'idle');
+            showFeedback([`<div class="ok-line">&#10003; Default strategy loaded</div>`]);
+        } catch(e) {
+            showFeedback([`<div class="err-line">Error: ${e.message}</div>`]);
         }
+    }
 
-        async function resetCode() {
-            try {
-                const res = await fetch('/editor/api/reset', { method: 'POST' });
-                const data = await res.json();
-                editor.setValue(data.code || '');
-                setStatus('Reset to default', 'idle');
-                showFeedback([`<div class="ok-line">&#10003; Default strategy loaded</div>`]);
-            } catch(e) {
-                showFeedback([`<div class="err-line">Error: ${e.message}</div>`]);
-            }
-        }
+    // Called by base.html when session changes
+    function onSessionChange(sessionId) {
+        updateEditorLabel();
+        loadStrategy();
+    }
 
-        init();
-    </script>
-</body>
-</html>
+    init();
+</script>
+{% endblock %}

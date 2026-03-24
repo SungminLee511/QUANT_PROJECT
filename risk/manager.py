@@ -21,9 +21,10 @@ logger = logging.getLogger(__name__)
 class RiskManager:
     """Subscribes to strategy signals, runs risk checks, forwards approved orders."""
 
-    def __init__(self, config: dict, redis: RedisClient):
+    def __init__(self, config: dict, redis: RedisClient, session_id: str = ""):
         self._config = config
         self._redis = redis
+        self._session_id = session_id
         self._kill_switch = KillSwitch(
             redis, config.get("risk", {}).get("kill_switch_key", "risk:kill_switch")
         )
@@ -52,7 +53,8 @@ class RiskManager:
             self._signal_channel,
             self._on_signal,
         )
-        logger.info("Risk manager started")
+        sid = f" (session={self._session_id})" if self._session_id else ""
+        logger.info("Risk manager started%s", sid)
 
         while self._running:
             # Periodically refresh portfolio state from Redis
@@ -61,7 +63,8 @@ class RiskManager:
 
     async def stop(self) -> None:
         self._running = False
-        logger.info("Risk manager stopped")
+        sid = f" (session={self._session_id})" if self._session_id else ""
+        logger.info("Risk manager stopped%s", sid)
 
     async def _on_signal(self, data: dict) -> None:
         """Process an incoming trade signal through the risk pipeline."""
