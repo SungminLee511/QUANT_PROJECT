@@ -27,11 +27,13 @@ FORBIDDEN_NAMES = {
 
 REQUIRED_METHODS = {
     "on_tick": {
-        "args": ["self", "tick"],
+        "required_args": ["self", "tick"],
+        "optional_args": ["extra_data"],
         "return_hint": "TradeSignal | None",
     },
     "on_bar": {
-        "args": ["self", "bar"],
+        "required_args": ["self", "bar"],
+        "optional_args": ["extra_data"],
         "return_hint": "TradeSignal | None",
     },
 }
@@ -152,10 +154,13 @@ def _check_required_methods(cls_node: ast.ClassDef, result: ValidationResult) ->
     }
 
     for method_name, spec in REQUIRED_METHODS.items():
+        required_args = spec["required_args"]
+        optional_args = spec.get("optional_args", [])
+
         if method_name not in methods:
             result.add_error(
                 f"Missing required method: async def {method_name}"
-                f"({', '.join(spec['args'])}) -> {spec['return_hint']}"
+                f"({', '.join(required_args)}) -> {spec['return_hint']}"
             )
             continue
 
@@ -167,14 +172,21 @@ def _check_required_methods(cls_node: ast.ClassDef, result: ValidationResult) ->
                 f"'{method_name}' must be async: async def {method_name}(...)"
             )
 
-        # Check parameter names
+        # Check parameter names — required args must match exactly,
+        # extra args must be in the optional list
         args = [a.arg for a in method.args.args]
-        expected = spec["args"]
-        if args != expected:
+        if args[:len(required_args)] != required_args:
             result.add_error(
-                f"'{method_name}' parameters must be ({', '.join(expected)}), "
-                f"got ({', '.join(args)})"
+                f"'{method_name}' required parameters must start with "
+                f"({', '.join(required_args)}), got ({', '.join(args)})"
             )
+        extra_args = args[len(required_args):]
+        for arg in extra_args:
+            if arg not in optional_args:
+                result.add_warning(
+                    f"'{method_name}' has unexpected parameter '{arg}'. "
+                    f"Known optional: {', '.join(optional_args) or 'none'}"
+                )
 
 
 def _get_name(node: ast.AST) -> str | None:

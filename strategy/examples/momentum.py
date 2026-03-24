@@ -30,7 +30,7 @@ class MomentumStrategy(BaseStrategy):
             self.threshold * 100,
         )
 
-    async def on_tick(self, tick: MarketTick) -> TradeSignal | None:
+    async def on_tick(self, tick: MarketTick, extra_data=None) -> TradeSignal | None:
         window = self._windows[tick.symbol]
         window.append(tick.price)
 
@@ -58,7 +58,7 @@ class MomentumStrategy(BaseStrategy):
             )
         return None
 
-    async def on_bar(self, bar: OHLCVBar) -> TradeSignal | None:
+    async def on_bar(self, bar: OHLCVBar, extra_data=None) -> TradeSignal | None:
         # Use close price of completed bars as additional data points
         window = self._windows[bar.symbol]
         window.append(bar.close)

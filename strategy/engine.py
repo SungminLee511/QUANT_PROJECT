@@ -11,6 +11,12 @@ from strategy.base import BaseStrategy
 
 logger = logging.getLogger(__name__)
 
+# Try to import user's custom data pipeline — returns {} if not configured
+try:
+    from data.custom_data import fetch_custom_data as _fetch_custom
+except Exception:
+    _fetch_custom = None
+
 
 class StrategyEngine:
     """Runs one or more strategies against incoming market data."""
@@ -21,6 +27,8 @@ class StrategyEngine:
         self._session_id = session_id
         self._strategies: list[BaseStrategy] = []
         self._running = False
+        self._symbols: list[str] = config.get("binance", {}).get("symbols", []) or config.get("alpaca", {}).get("symbols", [])
+        self._extra_data: dict = {}  # Cached custom data from last fetch
 
         channels = config.get("redis", {}).get("channels", {})
         self._market_channel = channels.get("market_data", "market:ticks")
@@ -80,20 +88,42 @@ class StrategyEngine:
     async def _on_market_data(self, data: dict) -> None:
         """Route incoming market data to the appropriate strategy handler."""
         try:
+            # Fetch custom data (non-blocking best-effort)
+            extra = await self._get_custom_data(data.get("symbol"))
+
             # Determine message type based on fields
             if "open" in data and "high" in data:
                 bar = OHLCVBar.model_validate(data)
-                await self._process_bar(bar)
+                await self._process_bar(bar, extra)
             else:
                 tick = MarketTick.model_validate(data)
-                await self._process_tick(tick)
+                await self._process_tick(tick, extra)
         except Exception:
             logger.exception("Error processing market data")
 
-    async def _process_tick(self, tick: MarketTick) -> None:
+    async def _get_custom_data(self, symbol: str | None = None) -> dict | None:
+        """Call the user's custom data pipeline. Returns None if not configured."""
+        if _fetch_custom is None:
+            return None
+        try:
+            # Build symbol list — use session symbols or just the current one
+            syms = self._symbols or ([symbol] if symbol else [])
+            if not syms:
+                return None
+            # Run in executor to avoid blocking the event loop
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(None, _fetch_custom, syms)
+            if result:
+                self._extra_data = result
+            return self._extra_data or None
+        except Exception:
+            logger.debug("Custom data fetch failed, using cached", exc_info=True)
+            return self._extra_data or None
+
+    async def _process_tick(self, tick: MarketTick, extra_data: dict | None = None) -> None:
         for strategy in self._strategies:
             try:
-                signal = await strategy.on_tick(tick)
+                signal = await strategy.on_tick(tick, extra_data=extra_data)
                 if signal is not None and signal.signal != Signal.HOLD:
                     await self._redis.publish(self._signal_channel, signal)
                     logger.info(
@@ -108,10 +138,10 @@ class StrategyEngine:
                     "Error in strategy %s on_tick", strategy.strategy_id
                 )
 
-    async def _process_bar(self, bar: OHLCVBar) -> None:
+    async def _process_bar(self, bar: OHLCVBar, extra_data: dict | None = None) -> None:
         for strategy in self._strategies:
             try:
-                signal = await strategy.on_bar(bar)
+                signal = await strategy.on_bar(bar, extra_data=extra_data)
                 if signal is not None and signal.signal != Signal.HOLD:
                     await self._redis.publish(self._signal_channel, signal)
                     logger.info(
