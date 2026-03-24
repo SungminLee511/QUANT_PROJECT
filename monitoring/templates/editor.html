@@ -32,8 +32,22 @@
 .feedback .warn-line { color: #d29922; margin: 2px 0; }
 .feedback .ok-line { color: #3fb950; margin: 2px 0; }
 
-.contract { background: #161b22; border-top: 1px solid #30363d; padding: 10px 24px; font-size: 12px; color: #484f58; flex-shrink: 0; }
-.contract code { color: #8b949e; background: #21262d; padding: 1px 4px; border-radius: 3px; }
+.reference-panel { background: #161b22; border-top: 1px solid #30363d; flex-shrink: 0; }
+.ref-toggle { padding: 8px 24px; cursor: pointer; font-size: 12px; color: #8b949e; user-select: none; }
+.ref-toggle:hover { background: #1c2129; }
+.ref-arrow { display: inline-block; transition: transform 0.2s; font-size: 10px; }
+.reference-panel.open .ref-arrow { transform: rotate(90deg); }
+.ref-body { display: none; padding: 0 24px 16px; font-size: 12px; color: #8b949e; max-height: 300px; overflow-y: auto; }
+.reference-panel.open .ref-body { display: block; }
+.ref-section { margin-bottom: 12px; }
+.ref-section h4 { color: #e1e4e8; font-size: 12px; margin-bottom: 4px; }
+.ref-section p { margin: 2px 0; }
+.ref-section pre { background: #0d1117; padding: 8px 12px; border-radius: 6px; font-size: 12px; color: #e1e4e8; overflow-x: auto; margin: 4px 0; }
+.ref-section code { color: #79c0ff; background: #21262d; padding: 1px 4px; border-radius: 3px; font-size: 11px; }
+.ref-table { width: 100%; border-collapse: collapse; margin: 4px 0; }
+.ref-table td { padding: 3px 8px; border-bottom: 1px solid #21262d; font-size: 11px; }
+.ref-table td:first-child { font-family: 'SF Mono', Monaco, Consolas, monospace; color: #79c0ff; white-space: nowrap; }
+.ref-table td:nth-child(2) { color: #d29922; white-space: nowrap; width: 70px; }
 
 .no-session-notice { padding: 40px 24px; text-align: center; color: #484f58; }
 .no-session-notice h3 { color: #8b949e; margin-bottom: 8px; }
@@ -58,11 +72,61 @@
 
     <div id="feedback" class="feedback" style="display:none;"></div>
 
-    <div class="contract">
-        <strong>Contract:</strong> Your class must subclass <code>BaseStrategy</code>.
-        Required: <code>async def on_tick(self, tick: MarketTick) -> TradeSignal | None</code>
-        and <code>async def on_bar(self, bar: OHLCVBar) -> TradeSignal | None</code>.
-        Allowed imports: math, statistics, collections, numpy, pandas, shared.enums, shared.schemas, strategy.base.
+    <div class="reference-panel">
+        <div class="ref-toggle" onclick="this.parentElement.classList.toggle('open')">
+            <span class="ref-arrow">&#9654;</span> <strong>Strategy Reference</strong> <span style="color:#484f58;font-size:11px;">(click to expand)</span>
+        </div>
+        <div class="ref-body">
+            <div class="ref-section">
+                <h4>Contract</h4>
+                <p>Your class must subclass <code>BaseStrategy</code>. Required methods:</p>
+                <pre>async def on_tick(self, tick: MarketTick, extra_data=None) -> TradeSignal | None
+async def on_bar(self, bar: OHLCVBar, extra_data=None) -> TradeSignal | None</pre>
+            </div>
+            <div class="ref-section">
+                <h4>MarketTick fields</h4>
+                <table class="ref-table">
+                    <tr><td><code>tick.symbol</code></td><td>str</td><td>Ticker symbol (e.g. "BTCUSDT", "AAPL")</td></tr>
+                    <tr><td><code>tick.price</code></td><td>float</td><td>Last trade price</td></tr>
+                    <tr><td><code>tick.volume</code></td><td>float</td><td>Trade size / quantity</td></tr>
+                    <tr><td><code>tick.timestamp</code></td><td>datetime</td><td>UTC timestamp</td></tr>
+                    <tr><td><code>tick.exchange</code></td><td>Exchange</td><td>BINANCE or ALPACA</td></tr>
+                </table>
+            </div>
+            <div class="ref-section">
+                <h4>OHLCVBar fields</h4>
+                <table class="ref-table">
+                    <tr><td><code>bar.symbol</code></td><td>str</td><td>Ticker symbol</td></tr>
+                    <tr><td><code>bar.open</code></td><td>float</td><td>Bar open price</td></tr>
+                    <tr><td><code>bar.high</code></td><td>float</td><td>Bar high price</td></tr>
+                    <tr><td><code>bar.low</code></td><td>float</td><td>Bar low price</td></tr>
+                    <tr><td><code>bar.close</code></td><td>float</td><td>Bar close price</td></tr>
+                    <tr><td><code>bar.volume</code></td><td>float</td><td>Total volume in bar</td></tr>
+                    <tr><td><code>bar.interval</code></td><td>str</td><td>Bar interval (e.g. "1m", "5m", "1h")</td></tr>
+                    <tr><td><code>bar.timestamp</code></td><td>datetime</td><td>UTC timestamp of bar close</td></tr>
+                </table>
+            </div>
+            <div class="ref-section">
+                <h4>extra_data (custom pipeline)</h4>
+                <p>Optional dict from <code>data/custom_data.py</code>. Keyed by symbol:</p>
+                <pre>extra_data.get("AAPL", {}).get("put_call_ratio")</pre>
+                <p style="color:#484f58;font-size:11px;">Returns None if no custom pipeline is configured. Edit <code>data/custom_data.py</code> to add your own data sources.</p>
+            </div>
+            <div class="ref-section">
+                <h4>TradeSignal (return value)</h4>
+                <pre>TradeSignal(
+    symbol="BTCUSDT",
+    signal=Signal.BUY,    # BUY, SELL, or HOLD
+    strength=0.8,         # 0.0 to 1.0
+    strategy_id=self.strategy_id,
+    metadata={"reason": "..."},  # optional dict
+)</pre>
+            </div>
+            <div class="ref-section">
+                <h4>Allowed imports</h4>
+                <p><code>math</code>, <code>statistics</code>, <code>collections</code>, <code>itertools</code>, <code>functools</code>, <code>datetime</code>, <code>decimal</code>, <code>numpy</code>, <code>pandas</code>, <code>shared.enums</code>, <code>shared.schemas</code>, <code>strategy.base</code></p>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
