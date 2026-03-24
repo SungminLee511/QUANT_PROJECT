@@ -432,3 +432,26 @@ Auto-activates kill switch on drawdown or daily loss breach.
 - **SimulationAdapter clips orders** — if buy exceeds available cash, quantity is reduced to max affordable (no rejection).
 - **`_run_with_restart`** — each session component auto-retries up to 3 times with 5s delay; sets session status to `error` on exhaust.
 - **Legacy scripts** (`run_data.py`, `run_strategy.py`, `run_execution.py`) still exist but are unused — `run_monitor.py` is the sole entry point.
+
+---
+
+## TODO
+
+### ~~1. Universe Presets for Session Creation~~ DONE
+Dropdown with presets (Mag 7, S&P 500 Top 30, NASDAQ Top 20, Crypto Top 10/20, Sector ETFs, Index ETFs) in `base.html`. Optgroups toggle by session type. Individual ticker input preserved alongside.
+
+### 2. Backtesting Engine
+**Status:** Not yet started — no backtest capability exists
+- Replay historical OHLCV data through the strategy engine
+- Reuse existing strategy code (same `on_tick`/`on_bar` interface)
+- Simulate fills using `SimulationAdapter` (already built)
+- Report: equity curve, total return, Sharpe, max drawdown, win rate, trade log
+- UI: new page or section in strategy editor — pick date range, run backtest, show results
+- Data source: yfinance `download()` for historical bars
+
+### ~~3. Custom Data Pipeline Placeholder + Strategy Input Param Memo~~ DONE
+- `data/custom_data.py` — placeholder with comments on expected return format (`dict[str, dict]`)
+- `BaseStrategy.on_tick/on_bar` accept optional `extra_data` param
+- `StrategyEngine` calls `fetch_custom_data()` in thread executor, passes to strategies
+- `strategy/validator.py` updated to allow optional `extra_data` parameter
+- Collapsible reference panel in `editor.html` showing MarketTick, OHLCVBar, extra_data, TradeSignal fields
