@@ -60,6 +60,10 @@ auth:
   password: "admin1234"
   session_ttl_hours: 24
 
+sessions:
+  default_sim_budget: 10000.0
+  yfinance_poll_interval_sec: 2
+
 monitoring:
   dashboard:
     host: "0.0.0.0"

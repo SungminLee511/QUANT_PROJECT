@@ -9,7 +9,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from shared.enums import Exchange, OrderStatus, OrderType, Side, Signal
+from shared.enums import Exchange, OrderStatus, OrderType, SessionType, Side, Signal
 
 
 def _utcnow() -> datetime:
@@ -24,6 +24,7 @@ class MarketTick(BaseModel):
     volume: float
     timestamp: datetime = Field(default_factory=_utcnow)
     exchange: Exchange
+    session_id: str = ""
     source: str = "data"
 
 
@@ -39,6 +40,7 @@ class OHLCVBar(BaseModel):
     interval: str  # e.g. "1m", "5m", "1h"
     timestamp: datetime = Field(default_factory=_utcnow)
     exchange: Exchange
+    session_id: str = ""
     source: str = "data"
 
 
@@ -51,6 +53,7 @@ class TradeSignal(BaseModel):
     strategy_id: str
     timestamp: datetime = Field(default_factory=_utcnow)
     metadata: dict = Field(default_factory=dict)
+    session_id: str = ""
     source: str = "strategy"
 
 
@@ -65,6 +68,7 @@ class OrderRequest(BaseModel):
     exchange: Exchange
     strategy_id: str
     timestamp: datetime = Field(default_factory=_utcnow)
+    session_id: str = ""
     source: str = "risk"
 
 
@@ -80,6 +84,7 @@ class OrderUpdate(BaseModel):
     avg_price: float = 0.0
     timestamp: datetime = Field(default_factory=_utcnow)
     exchange: Exchange
+    session_id: str = ""
     source: str = "execution"
 
 
@@ -98,4 +103,5 @@ class AlertMessage(BaseModel):
     message: str
     source: str
     timestamp: datetime = Field(default_factory=_utcnow)
+    session_id: str = ""
     metadata: dict = Field(default_factory=dict)

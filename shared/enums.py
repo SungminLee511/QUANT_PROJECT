@@ -37,3 +37,20 @@ class AssetType(str, Enum):
 class OrderType(str, Enum):
     MARKET = "market"
     LIMIT = "limit"
+
+
+class SessionType(str, Enum):
+    BINANCE = "binance"
+    ALPACA = "alpaca"
+    BINANCE_SIM = "binance_sim"
+    ALPACA_SIM = "alpaca_sim"
+
+    @property
+    def is_simulation(self) -> bool:
+        return self in (SessionType.BINANCE_SIM, SessionType.ALPACA_SIM)
+
+    @property
+    def exchange(self) -> "Exchange":
+        if self in (SessionType.BINANCE, SessionType.BINANCE_SIM):
+            return Exchange.BINANCE
+        return Exchange.ALPACA

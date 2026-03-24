@@ -126,6 +126,11 @@ class RedisClient:
         return self._redis
 
 
+def session_channel(session_id: str, base_channel: str) -> str:
+    """Build a session-namespaced Redis channel: session:{id}:{base}."""
+    return f"session:{session_id}:{base_channel}"
+
+
 def create_redis_client(config: dict) -> RedisClient:
     """Create a RedisClient from config dict."""
     redis_cfg = config.get("redis", {})
