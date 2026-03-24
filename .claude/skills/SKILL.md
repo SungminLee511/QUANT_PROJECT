@@ -66,15 +66,17 @@ QUANT_PROJECT/
 │   └── reconciler.py                 # Periodic exchange reconciliation with drift detection
 │
 ├── monitoring/                        # Web interface (ALL user interaction happens here)
-│   ├── app.py                         # FastAPI app factory, mounts auth + dashboard + editor routers
+│   ├── app.py                         # FastAPI app factory, mounts auth + dashboard + editor + settings
 │   ├── auth.py                        # Session-based login/logout (cookie auth, no heavy deps)
 │   ├── dashboard.py                   # Dashboard API: positions, P&L, orders, equity history, kill switch
 │   ├── editor.py                      # Strategy editor API: load/save/validate/deploy user code
+│   ├── settings.py                    # Settings API: API key management, .env read/write, masked display
 │   ├── logger.py                      # structlog: JSON (prod) or console (dev) output
 │   └── templates/
 │       ├── login.html                # Login page (simple form)
 │       ├── dashboard.html            # Main dashboard: equity curve, positions, orders, kill switch
-│       └── editor.html               # Code editor: CodeMirror (CDN), validate button, deploy button
+│       ├── editor.html               # Code editor: CodeMirror (CDN), validate button, deploy button
+│       └── settings.html             # API key config: Binance/Alpaca keys, testnet/paper toggles
 │
 ├── db/                                # Database layer
 │   ├── models.py                      # SQLAlchemy 2.0: Trade, Position, Order, EquitySnapshot, AlertLog
@@ -118,6 +120,7 @@ All user interaction is through the web UI. No Telegram bot, no CLI commands nee
 | `/login` | Login | Username + password form |
 | `/` | Dashboard | Equity curve, positions, orders, P&L, kill switch, system status |
 | `/editor` | Strategy Editor | In-browser Python editor with validate & deploy |
+| `/settings` | Settings | API key management (Binance/Alpaca), testnet/paper toggles, saved to `.env` |
 
 ### Dashboard Features
 

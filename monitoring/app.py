@@ -71,4 +71,9 @@ def create_app(config: dict, redis: RedisClient) -> FastAPI:
     from monitoring.editor import create_editor_router
     app.include_router(create_editor_router(config, redis, templates))
 
+    # ── Settings ─────────────────────────────────────────────────────
+
+    from monitoring.settings import create_settings_router
+    app.include_router(create_settings_router(config, redis, templates))
+
     return app
