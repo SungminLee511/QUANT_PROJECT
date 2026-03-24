@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "quant-trader"
+version = "0.1.0"
+description = "Automated trading system for crypto (Binance) and US equities (Alpaca)"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+
+[tool.setuptools.packages.find]
+include = ["shared*", "data*", "strategy*", "risk*", "execution*", "portfolio*", "monitoring*", "db*", "scripts*"]
