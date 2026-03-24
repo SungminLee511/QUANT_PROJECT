@@ -1,4 +1,8 @@
-"""Entry point: Web UI service (dashboard + strategy editor)."""
+"""Entry point: Web UI service (dashboard + strategy editor + session manager).
+
+This is the main entry point that also orchestrates trading sessions.
+Previously active sessions are auto-restarted on startup via the FastAPI lifespan.
+"""
 
 import asyncio
 import signal
@@ -10,13 +14,14 @@ from shared.redis_client import create_redis_client
 from monitoring.logger import setup_logging
 from db.session import init_engine, init_db, close_db
 from monitoring.app import create_app
+from session.manager import SessionManager
 
 
 async def main():
     config = load_config()
     setup_logging(config)
 
-    # Initialize DB (for reading orders/equity history)
+    # Initialize DB
     init_engine(config)
     await init_db()
 
@@ -24,8 +29,11 @@ async def main():
     redis = create_redis_client(config)
     await redis.connect()
 
-    # Create FastAPI app
-    app = create_app(config, redis)
+    # Create session manager (orchestrates all trading pipelines)
+    session_manager = SessionManager(config, redis)
+
+    # Create FastAPI app (lifespan handles auto-restart of active sessions)
+    app = create_app(config, redis, session_manager)
     dash_cfg = config.get("monitoring", {}).get("dashboard", {})
     host = dash_cfg.get("host", "0.0.0.0")
     port = dash_cfg.get("port", 8080)
@@ -46,6 +54,8 @@ async def main():
 
     await server.serve()
 
+    # Cleanup
+    await session_manager.stop_all()
     await redis.disconnect()
     await close_db()
 

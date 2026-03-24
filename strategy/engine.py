@@ -15,9 +15,10 @@ logger = logging.getLogger(__name__)
 class StrategyEngine:
     """Runs one or more strategies against incoming market data."""
 
-    def __init__(self, config: dict, redis: RedisClient):
+    def __init__(self, config: dict, redis: RedisClient, session_id: str = ""):
         self._config = config
         self._redis = redis
+        self._session_id = session_id
         self._strategies: list[BaseStrategy] = []
         self._running = False
 

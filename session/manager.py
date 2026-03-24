@@ -441,6 +441,7 @@ class SessionManager:
             "starting_budget": ts.starting_budget,
             "symbols": config_data.get("symbols", []),
             "strategy_class": ts.strategy_class,
+            "strategy_code": ts.strategy_code or "",
             "config": config_data,
             "created_at": ts.created_at.isoformat() if ts.created_at else "",
         }

@@ -1,25 +1,44 @@
-"""Dashboard router — positions, P&L, orders, equity history, kill switch."""
+"""Dashboard router — positions, P&L, orders, equity history, kill switch.
+
+All API endpoints accept an optional ?session_id= query parameter.
+When provided, data is scoped to that session via namespaced Redis keys and DB filtering.
+"""
 
 import logging
+from typing import Optional
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
 
 from monitoring.auth import get_current_user, require_auth
 from risk.kill_switch import KillSwitch
-from shared.redis_client import RedisClient
+from session.manager import SessionManager
+from shared.redis_client import RedisClient, session_channel
 
 logger = logging.getLogger(__name__)
 
 
+def _portfolio_key(session_id: Optional[str]) -> str:
+    """Return the Redis key for portfolio state, scoped to session if provided."""
+    if session_id:
+        return session_channel(session_id, "portfolio:state")
+    return "portfolio:state"
+
+
+def _kill_switch_key(session_id: Optional[str], default_key: str) -> str:
+    """Return the Redis key for kill switch, scoped to session if provided."""
+    if session_id:
+        return session_channel(session_id, "risk:kill_switch")
+    return default_key
+
+
 def create_dashboard_router(
-    config: dict, redis: RedisClient, templates: Jinja2Templates
+    config: dict, redis: RedisClient, templates: Jinja2Templates,
+    session_manager: SessionManager,
 ) -> APIRouter:
     router = APIRouter()
-    kill_switch = KillSwitch(
-        redis, config.get("risk", {}).get("kill_switch_key", "risk:kill_switch")
-    )
+    default_ks_key = config.get("risk", {}).get("kill_switch_key", "risk:kill_switch")
 
     # ── Pages ────────────────────────────────────────────────────────
 
@@ -28,33 +47,40 @@ def create_dashboard_router(
         redirect = require_auth(request)
         if redirect:
             return redirect
+        # Fetch all sessions for the sidebar
+        sessions = await session_manager.get_all_sessions()
+        for s in sessions:
+            s["is_running"] = session_manager.is_running(s["id"])
         return templates.TemplateResponse("dashboard.html", {
             "request": request,
             "user": get_current_user(request),
+            "sessions": sessions,
         })
 
     # ── API ──────────────────────────────────────────────────────────
 
     @router.get("/api/positions")
-    async def api_positions(request: Request):
+    async def api_positions(request: Request, session_id: Optional[str] = Query(None)):
         if not get_current_user(request):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
-        state = await redis.get_flag("portfolio:state")
+        key = _portfolio_key(session_id)
+        state = await redis.get_flag(key)
         if not state:
             return JSONResponse({"positions": [], "cash": 0, "total_equity": 0})
         return JSONResponse({
-            "positions": [
+            "positions": state.get("positions", [
                 {"symbol": s} for s in state.get("position_symbols", [])
-            ],
+            ]),
             "cash": state.get("cash", 0),
             "total_equity": state.get("total_equity", 0),
         })
 
     @router.get("/api/pnl")
-    async def api_pnl(request: Request):
+    async def api_pnl(request: Request, session_id: Optional[str] = Query(None)):
         if not get_current_user(request):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
-        state = await redis.get_flag("portfolio:state")
+        key = _portfolio_key(session_id)
+        state = await redis.get_flag(key)
         if not state:
             return JSONResponse({"daily_pnl": 0, "total_equity": 0})
         return JSONResponse({
@@ -64,7 +90,7 @@ def create_dashboard_router(
         })
 
     @router.get("/api/orders")
-    async def api_orders(request: Request):
+    async def api_orders(request: Request, session_id: Optional[str] = Query(None)):
         if not get_current_user(request):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
         try:
@@ -74,6 +100,8 @@ def create_dashboard_router(
 
             async with get_session() as session:
                 stmt = select(Order).order_by(Order.created_at.desc()).limit(100)
+                if session_id:
+                    stmt = stmt.where(Order.session_id == session_id)
                 result = await session.execute(stmt)
                 orders = result.scalars().all()
                 return JSONResponse({
@@ -96,7 +124,7 @@ def create_dashboard_router(
             return JSONResponse({"orders": [], "error": str(e)})
 
     @router.get("/api/equity-history")
-    async def api_equity_history(request: Request):
+    async def api_equity_history(request: Request, session_id: Optional[str] = Query(None)):
         if not get_current_user(request):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
         try:
@@ -110,6 +138,8 @@ def create_dashboard_router(
                     .order_by(EquitySnapshot.timestamp.desc())
                     .limit(500)
                 )
+                if session_id:
+                    stmt = stmt.where(EquitySnapshot.session_id == session_id)
                 result = await session.execute(stmt)
                 snapshots = result.scalars().all()
                 return JSONResponse({
@@ -128,10 +158,13 @@ def create_dashboard_router(
             return JSONResponse({"snapshots": [], "error": str(e)})
 
     @router.get("/api/status")
-    async def api_status(request: Request):
+    async def api_status(request: Request, session_id: Optional[str] = Query(None)):
         if not get_current_user(request):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
-        state = await redis.get_flag("portfolio:state")
+        key = _portfolio_key(session_id)
+        ks_key = _kill_switch_key(session_id, default_ks_key)
+        state = await redis.get_flag(key)
+        kill_switch = KillSwitch(redis, ks_key)
         ks = await kill_switch.get_state()
         return JSONResponse({
             "kill_switch": ks,
@@ -140,9 +173,11 @@ def create_dashboard_router(
         })
 
     @router.post("/api/kill-switch")
-    async def api_kill_switch(request: Request):
+    async def api_kill_switch(request: Request, session_id: Optional[str] = Query(None)):
         if not get_current_user(request):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
+        ks_key = _kill_switch_key(session_id, default_ks_key)
+        kill_switch = KillSwitch(redis, ks_key)
         body = await request.json()
         action = body.get("action", "toggle")
         if action == "activate":

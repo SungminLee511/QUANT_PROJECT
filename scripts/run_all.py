@@ -9,16 +9,12 @@ from shared.config import load_config
 from shared.redis_client import create_redis_client
 from monitoring.logger import setup_logging
 from db.session import init_engine, init_db, close_db
-from data.manager import DataFeedManager
-from strategy.engine import StrategyEngine
-from risk.manager import RiskManager
-from execution.router import OrderRouter
-from portfolio.tracker import PortfolioTracker
 from monitoring.app import create_app
+from session.manager import SessionManager
 
 
-async def run_web(config, redis):
-    app = create_app(config, redis)
+async def run_web(config, redis, session_manager):
+    app = create_app(config, redis, session_manager)
     dash_cfg = config.get("monitoring", {}).get("dashboard", {})
     host = dash_cfg.get("host", "0.0.0.0")
     port = dash_cfg.get("port", 8080)
@@ -39,21 +35,12 @@ async def main():
     redis = create_redis_client(config)
     await redis.connect()
 
-    # Create all services
-    data_mgr = DataFeedManager(config)
-    strategy_engine = StrategyEngine(config, redis)
-    risk_mgr = RiskManager(config, redis)
-    router = OrderRouter(config, redis)
-    tracker = PortfolioTracker(config, redis)
+    # Create session manager
+    session_manager = SessionManager(config, redis)
 
-    # Run everything
+    # Run web server (session manager lives inside FastAPI's lifespan)
     tasks = [
-        asyncio.create_task(data_mgr.run(), name="data"),
-        asyncio.create_task(strategy_engine.start(), name="strategy"),
-        asyncio.create_task(risk_mgr.start(), name="risk"),
-        asyncio.create_task(router.start(), name="execution"),
-        asyncio.create_task(tracker.start(), name="portfolio"),
-        asyncio.create_task(run_web(config, redis), name="web"),
+        asyncio.create_task(run_web(config, redis, session_manager), name="web"),
     ]
 
     shutdown_event = asyncio.Event()
@@ -69,10 +56,7 @@ async def main():
     await shutdown_event.wait()
 
     # Cleanup
-    await strategy_engine.stop()
-    await risk_mgr.stop()
-    await router.stop()
-    await tracker.stop()
+    await session_manager.stop_all()
 
     for task in tasks:
         task.cancel()
