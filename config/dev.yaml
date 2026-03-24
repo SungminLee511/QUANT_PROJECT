@@ -1,0 +1,10 @@
+app:
+  env: "dev"
+  log_level: "DEBUG"
+
+binance:
+  testnet: true
+
+alpaca:
+  paper: true
+  base_url: "https://paper-api.alpaca.markets"

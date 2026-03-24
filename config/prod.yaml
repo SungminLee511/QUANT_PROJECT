@@ -1,0 +1,10 @@
+app:
+  env: "prod"
+  log_level: "INFO"
+
+binance:
+  testnet: false
+
+alpaca:
+  paper: false
+  base_url: "https://api.alpaca.markets"

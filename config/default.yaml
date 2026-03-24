@@ -1,0 +1,65 @@
+app:
+  name: "quant-trader"
+  env: "dev"
+  log_level: "INFO"
+
+redis:
+  host: "localhost"
+  port: 6379
+  db: 0
+  channels:
+    market_data: "market:ticks"
+    signals: "strategy:signals"
+    orders: "execution:orders"
+    order_updates: "execution:updates"
+    alerts: "monitoring:alerts"
+
+database:
+  host: "localhost"
+  port: 5432
+  name: "quant_trader"
+  user: "quant"
+  password: "changeme"
+
+binance:
+  api_key: ""
+  api_secret: ""
+  testnet: true
+  symbols:
+    - "BTCUSDT"
+    - "ETHUSDT"
+
+alpaca:
+  api_key: ""
+  api_secret: ""
+  paper: true
+  base_url: "https://paper-api.alpaca.markets"
+  symbols:
+    - "AAPL"
+    - "SPY"
+
+strategy:
+  id: "momentum_v1"
+  module: "strategy.examples.momentum"
+  class_name: "MomentumStrategy"
+  params: {}
+
+risk:
+  max_position_pct: 0.10
+  max_drawdown_pct: 0.05
+  max_daily_loss_pct: 0.03
+  max_open_positions: 10
+  kill_switch_key: "risk:kill_switch"
+
+portfolio:
+  base_currency: "USDT"
+  reconcile_interval_sec: 60
+
+monitoring:
+  dashboard:
+    host: "0.0.0.0"
+    port: 8080
+  telegram:
+    bot_token: ""
+    chat_id: ""
+    enabled: false

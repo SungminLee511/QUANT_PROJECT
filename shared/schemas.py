@@ -1,0 +1,101 @@
+"""Pydantic v2 models for all inter-service messages.
+
+Every message that goes through Redis is serializable via .model_dump_json()
+and deserializable via .model_validate_json().
+"""
+
+from datetime import datetime, timezone
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
+from shared.enums import Exchange, OrderStatus, OrderType, Side, Signal
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class MarketTick(BaseModel):
+    """A single trade / price update from an exchange."""
+
+    symbol: str
+    price: float
+    volume: float
+    timestamp: datetime = Field(default_factory=_utcnow)
+    exchange: Exchange
+    source: str = "data"
+
+
+class OHLCVBar(BaseModel):
+    """Completed OHLCV candlestick bar."""
+
+    symbol: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+    interval: str  # e.g. "1m", "5m", "1h"
+    timestamp: datetime = Field(default_factory=_utcnow)
+    exchange: Exchange
+    source: str = "data"
+
+
+class TradeSignal(BaseModel):
+    """Signal emitted by a strategy."""
+
+    symbol: str
+    signal: Signal
+    strength: float = Field(ge=0.0, le=1.0)
+    strategy_id: str
+    timestamp: datetime = Field(default_factory=_utcnow)
+    metadata: dict = Field(default_factory=dict)
+    source: str = "strategy"
+
+
+class OrderRequest(BaseModel):
+    """Request to place an order, emitted by the risk manager."""
+
+    symbol: str
+    side: Side
+    quantity: float
+    order_type: OrderType = OrderType.MARKET
+    price: Optional[float] = None
+    exchange: Exchange
+    strategy_id: str
+    timestamp: datetime = Field(default_factory=_utcnow)
+    source: str = "risk"
+
+
+class OrderUpdate(BaseModel):
+    """Update on an order's status."""
+
+    order_id: str
+    external_id: Optional[str] = None
+    symbol: str
+    side: Side
+    status: OrderStatus
+    filled_qty: float = 0.0
+    avg_price: float = 0.0
+    timestamp: datetime = Field(default_factory=_utcnow)
+    exchange: Exchange
+    source: str = "execution"
+
+
+class RiskCheckResult(BaseModel):
+    """Result of running a trade signal through the risk pipeline."""
+
+    approved: bool
+    reason: str = ""
+    original_signal: TradeSignal
+
+
+class AlertMessage(BaseModel):
+    """Alert sent to the monitoring channel."""
+
+    level: str = "info"  # info, warning, error, critical
+    message: str
+    source: str
+    timestamp: datetime = Field(default_factory=_utcnow)
+    metadata: dict = Field(default_factory=dict)
