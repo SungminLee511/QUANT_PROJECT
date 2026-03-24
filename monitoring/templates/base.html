@@ -179,8 +179,28 @@
                 <div class="hint">Simulation uses real market data but fake money. No API keys needed.</div>
             </div>
             <div class="field">
+                <label>Symbol Universe</label>
+                <select id="newUniverse" onchange="onUniverseChange()">
+                    <option value="">— Custom (type your own) —</option>
+                    <optgroup label="Crypto" id="universesCrypto">
+                        <option value="BTCUSDT,ETHUSDT">BTC + ETH</option>
+                        <option value="BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,XRPUSDT,ADAUSDT,DOGEUSDT,AVAXUSDT,DOTUSDT,MATICUSDT">Crypto Top 10</option>
+                        <option value="BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,XRPUSDT,ADAUSDT,DOGEUSDT,AVAXUSDT,DOTUSDT,MATICUSDT,SHIBUSDT,LTCUSDT,TRXUSDT,ATOMUSDT,LINKUSDT,NEARUSDT,UNIUSDT,APTUSDT,OPUSDT,ARBUSDT">Crypto Top 20</option>
+                    </optgroup>
+                    <optgroup label="US Stocks" id="universesStocks">
+                        <option value="AAPL,MSFT,GOOGL,AMZN,NVDA,META,TSLA">Mag 7</option>
+                        <option value="AAPL,MSFT,GOOGL,AMZN,NVDA,META,TSLA,BRK-B,JPM,V,UNH,JNJ,WMT,PG,MA,HD,XOM,BAC,PFE,ABBV,KO,COST,PEP,MRK,TMO,AVGO,CSCO,ACN,MCD,LIN">S&P 500 Top 30</option>
+                        <option value="AAPL,MSFT,GOOGL,AMZN,NVDA,META,TSLA,AVGO,COST,NFLX,AMD,QCOM,ADBE,INTC,INTU,TXN,AMAT,ISRG,LRCX,MU">NASDAQ Top 20</option>
+                        <option value="XLK,XLF,XLV,XLE,XLI,XLY,XLP,XLU,XLB,XLRE,XLC">Sector ETFs (SPDR)</option>
+                        <option value="SPY,QQQ,IWM,DIA,VTI">Major Index ETFs</option>
+                    </optgroup>
+                </select>
+                <div class="hint">Pick a preset or choose "Custom" to type your own tickers.</div>
+            </div>
+            <div class="field">
                 <label>Symbols (comma-separated)</label>
                 <input type="text" id="newSymbols" placeholder="BTCUSDT, ETHUSDT" value="BTCUSDT">
+                <div class="hint">Edit freely — the universe dropdown just pre-fills this field.</div>
             </div>
             <div class="field">
                 <label>Starting Budget ($)</label>
@@ -262,20 +282,36 @@
             document.getElementById('createModal').classList.remove('show');
         }
 
-        // Show/hide API key fields based on session type
+        // Show/hide API key fields + toggle universe options based on session type
         document.getElementById('newType').addEventListener('change', function() {
             const isLive = this.value === 'binance' || this.value === 'alpaca';
+            const isCrypto = this.value.includes('binance');
             document.getElementById('liveKeyFields').style.display = isLive ? 'block' : 'none';
-            // Update symbol placeholder
+
+            // Show/hide relevant universe optgroups
+            document.getElementById('universesCrypto').style.display = isCrypto ? '' : 'none';
+            document.getElementById('universesStocks').style.display = isCrypto ? 'none' : '';
+
+            // Reset universe dropdown and update symbol placeholder
+            const uniSelect = document.getElementById('newUniverse');
+            uniSelect.value = '';
             const symInput = document.getElementById('newSymbols');
-            if (this.value.includes('alpaca')) {
+            if (!isCrypto) {
                 symInput.placeholder = 'AAPL, MSFT, TSLA';
-                symInput.value = symInput.value || 'AAPL';
+                symInput.value = 'AAPL';
             } else {
                 symInput.placeholder = 'BTCUSDT, ETHUSDT';
-                symInput.value = symInput.value || 'BTCUSDT';
+                symInput.value = 'BTCUSDT';
             }
         });
+
+        // Universe preset fills the symbols input
+        function onUniverseChange() {
+            const val = document.getElementById('newUniverse').value;
+            if (val) {
+                document.getElementById('newSymbols').value = val;
+            }
+        }
 
         // ── Session CRUD ────────────────────────────────────
         async function createSession() {
