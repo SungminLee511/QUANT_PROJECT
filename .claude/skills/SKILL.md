@@ -97,9 +97,14 @@ QUANT_PROJECT/
 │   ├── pnl.py                        # Realized/unrealized P&L, win rate, daily metrics
 │   └── reconciler.py                 # Periodic exchange reconciliation with drift detection
 │
+├── backtest/                          # Backtesting engine
+│   ├── __init__.py
+│   └── engine.py                     # Core engine: data download, strategy replay, portfolio tracking, metrics
+│
 ├── monitoring/                        # Web interface (ALL user interaction happens here)
 │   ├── app.py                         # FastAPI app factory, lifespan auto-restarts active sessions
 │   ├── auth.py                        # Session-based login/logout (cookie auth, no heavy deps)
+│   ├── backtest.py                    # Backtest API: run backtest, load strategy code for backtest page
 │   ├── dashboard.py                   # Dashboard API: positions, P&L, orders, equity history, kill switch
 │   ├── editor.py                      # Strategy editor API: load/save/validate/deploy (per-session or global)
 │   ├── settings.py                    # Settings API: global API key management, .env read/write
@@ -108,6 +113,7 @@ QUANT_PROJECT/
 │   └── templates/
 │       ├── base.html                 # Shared layout: nav bar + session sidebar + create modal + toast
 │       ├── login.html                # Login page (simple form)
+│       ├── backtest.html             # Backtest page: config form, code editor, equity chart, metrics, trade log
 │       ├── dashboard.html            # Main dashboard (extends base.html): equity curve, positions, orders
 │       ├── editor.html               # Code editor (extends base.html): CodeMirror, per-session deploy
 │       └── settings.html             # Global API keys (extends base.html): Binance/Alpaca config
@@ -125,8 +131,9 @@ QUANT_PROJECT/
 │   ├── run_monitor.py                # Main entry point: Web UI + SessionManager (replaces all above)
 │   └── run_all.py                    # Dev helper: all services in one process
 │
-└── tests/                             # Unit tests (37 tests)
+└── tests/                             # Unit tests (50 tests)
     ├── conftest.py                    # Shared fixtures (mock Redis, sample data)
+    ├── test_backtest/test_engine.py   # Backtest engine: strategy loading, portfolio, metrics
     ├── test_data/test_normalizer.py   # Binance trade/kline normalization
     ├── test_strategy/test_engine.py   # Momentum strategy buy/sell/hold signals
     ├── test_risk/test_manager.py      # All risk limit checks
@@ -167,6 +174,7 @@ All pages (except login) share a common layout:
 | `/login` | Login | Username + password form |
 | `/` | Dashboard | Equity curve, positions, orders, P&L, kill switch — scoped by ?session_id |
 | `/editor` | Strategy Editor | In-browser Python editor — per-session strategy storage via DB |
+| `/backtest` | Backtest | Run backtests: config form, CodeMirror editor, equity chart, metrics, trade log |
 | `/settings` | Settings | Global API key config (Binance/Alpaca), testnet/paper toggles |
 
 ### Session Management UI
@@ -440,14 +448,15 @@ Auto-activates kill switch on drawdown or daily loss breach.
 ### ~~1. Universe Presets for Session Creation~~ DONE
 Dropdown with presets (Mag 7, S&P 500 Top 30, NASDAQ Top 20, Crypto Top 10/20, Sector ETFs, Index ETFs) in `base.html`. Optgroups toggle by session type. Individual ticker input preserved alongside.
 
-### 2. Backtesting Engine
-**Status:** Not yet started — no backtest capability exists
-- Replay historical OHLCV data through the strategy engine
-- Reuse existing strategy code (same `on_tick`/`on_bar` interface)
-- Simulate fills using `SimulationAdapter` (already built)
-- Report: equity curve, total return, Sharpe, max drawdown, win rate, trade log
-- UI: new page or section in strategy editor — pick date range, run backtest, show results
-- Data source: yfinance `download()` for historical bars
+### ~~2. Backtesting Engine~~ DONE
+- `backtest/engine.py` — Core engine: downloads yfinance OHLCV, replays through strategy's `on_tick`/`on_bar`, tracks virtual portfolio, computes metrics
+- `backtest/__init__.py` — Package init
+- `monitoring/backtest.py` — FastAPI router: `GET /backtest` (page), `POST /backtest/api/run` (run backtest), `GET /backtest/api/load-code` (load strategy code)
+- `monitoring/templates/backtest.html` — Full UI: config form (symbols, dates, cash, interval), CodeMirror editor, Chart.js equity curve, metrics grid, trade log table
+- Nav link added to `base.html`
+- Router wired into `monitoring/app.py`
+- 13 unit tests in `tests/test_backtest/test_engine.py` (strategy loading, portfolio tracking, metrics computation)
+- Metrics: total return, annualized return, Sharpe ratio, max drawdown, win rate, profit factor, avg win/loss
 
 ### ~~3. Custom Data Pipeline Placeholder + Strategy Input Param Memo~~ DONE
 - `data/custom_data.py` — placeholder with comments on expected return format (`dict[str, dict]`)

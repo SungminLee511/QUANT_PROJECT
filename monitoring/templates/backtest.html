@@ -1,0 +1,418 @@
+{% extends "base.html" %}
+{% block title %}Backtest — Quant Trader{% endblock %}
+
+{% block head_extra %}
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<!-- CodeMirror -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+{% endblock %}
+
+{% block extra_styles %}
+<style>
+/* ── Layout ── */
+.bt-container { display: flex; gap: 16px; height: calc(100vh - 70px); }
+.bt-left { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.bt-right { width: 420px; min-width: 360px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+
+/* ── Cards ── */
+.bt-card {
+    background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+    padding: 14px 16px; color: #e1e4e8;
+}
+.bt-card h3 { margin: 0 0 10px 0; font-size: 14px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* ── Config form ── */
+.bt-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; align-items: end; }
+.bt-form .full { grid-column: 1 / -1; }
+.bt-form label { font-size: 12px; color: #8b949e; margin-bottom: 2px; display: block; }
+.bt-form input, .bt-form select {
+    width: 100%; padding: 6px 10px; background: #0d1117; border: 1px solid #30363d;
+    border-radius: 4px; color: #e1e4e8; font-size: 13px; box-sizing: border-box;
+}
+.bt-form input:focus, .bt-form select:focus { border-color: #58a6ff; outline: none; }
+
+/* ── Buttons ── */
+.btn-run {
+    padding: 8px 20px; background: #238636; color: #fff; border: none;
+    border-radius: 6px; font-weight: 600; font-size: 14px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+}
+.btn-run:hover { background: #2ea043; }
+.btn-run:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-run .spinner {
+    width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: #fff; border-radius: 50%; animation: spin 0.8s linear infinite;
+    display: none;
+}
+.btn-run.loading .spinner { display: inline-block; }
+.btn-run.loading .btn-text { display: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Metrics grid ── */
+.metrics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.metric-item {
+    background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+    padding: 10px 12px; text-align: center;
+}
+.metric-item .label { font-size: 11px; color: #8b949e; margin-bottom: 4px; }
+.metric-item .value { font-size: 18px; font-weight: 700; color: #e1e4e8; }
+.metric-item .value.positive { color: #3fb950; }
+.metric-item .value.negative { color: #f85149; }
+
+/* ── Chart ── */
+.chart-container { position: relative; height: 260px; }
+
+/* ── Trade log ── */
+.trade-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.trade-table th {
+    text-align: left; padding: 6px 8px; border-bottom: 1px solid #30363d;
+    color: #8b949e; font-weight: 600; position: sticky; top: 0; background: #161b22;
+}
+.trade-table td { padding: 5px 8px; border-bottom: 1px solid #21262d; }
+.trade-table .buy { color: #3fb950; }
+.trade-table .sell { color: #f85149; }
+.trade-log-wrap { max-height: 300px; overflow-y: auto; }
+
+/* ── Code editor ── */
+.CodeMirror { height: 100% !important; font-size: 13px; border-radius: 6px; }
+.editor-wrap { flex: 1; min-height: 0; border: 1px solid #30363d; border-radius: 6px; overflow: hidden; }
+
+/* ── Status ── */
+.bt-status { padding: 10px 14px; border-radius: 6px; font-size: 13px; display: none; }
+.bt-status.error { display: block; background: #3d1214; border: 1px solid #f85149; color: #f85149; }
+.bt-status.info { display: block; background: #0c2d6b; border: 1px solid #58a6ff; color: #79c0ff; }
+
+/* ── Placeholder ── */
+.bt-placeholder {
+    display: flex; align-items: center; justify-content: center;
+    height: 100%; color: #484f58; font-size: 14px; font-style: italic;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bt-container">
+    <!-- LEFT: Strategy code + config -->
+    <div class="bt-left">
+        <!-- Config bar -->
+        <div class="bt-card">
+            <h3>Backtest Configuration</h3>
+            <div class="bt-form">
+                <div class="full">
+                    <label>Symbols (comma-separated)</label>
+                    <input type="text" id="btSymbols" value="AAPL,MSFT" placeholder="AAPL,MSFT,GOOGL">
+                </div>
+                <div>
+                    <label>Start Date</label>
+                    <input type="date" id="btStartDate" value="2024-01-01">
+                </div>
+                <div>
+                    <label>End Date</label>
+                    <input type="date" id="btEndDate" value="2025-01-01">
+                </div>
+                <div>
+                    <label>Starting Cash ($)</label>
+                    <input type="number" id="btCash" value="10000" min="100">
+                </div>
+                <div>
+                    <label>Bar Interval</label>
+                    <select id="btInterval">
+                        <option value="1d" selected>Daily (1d)</option>
+                        <option value="1wk">Weekly (1wk)</option>
+                        <option value="1mo">Monthly (1mo)</option>
+                    </select>
+                </div>
+                <div class="full" style="display:flex; gap:10px; align-items:center; margin-top:4px;">
+                    <button class="btn-run" id="btnRun" onclick="runBacktest()">
+                        <span class="btn-text">Run Backtest</span>
+                        <span class="spinner"></span>
+                    </button>
+                    <span id="btRuntime" style="font-size:12px; color:#8b949e;"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Strategy code editor -->
+        <div class="bt-card" style="flex:1; display:flex; flex-direction:column; min-height:0;">
+            <h3>Strategy Code</h3>
+            <div class="editor-wrap">
+                <textarea id="btCode"></textarea>
+            </div>
+        </div>
+    </div>
+
+    <!-- RIGHT: Results -->
+    <div class="bt-right" id="btResults">
+        <!-- Status messages -->
+        <div class="bt-status" id="btStatus"></div>
+
+        <!-- Metrics -->
+        <div class="bt-card" id="metricsCard" style="display:none;">
+            <h3>Performance Metrics</h3>
+            <div class="metrics-grid" id="metricsGrid"></div>
+        </div>
+
+        <!-- Equity chart -->
+        <div class="bt-card" id="chartCard" style="display:none;">
+            <h3>Equity Curve</h3>
+            <div class="chart-container">
+                <canvas id="equityChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Trade log -->
+        <div class="bt-card" id="tradesCard" style="display:none;">
+            <h3>Trade Log (<span id="tradeCount">0</span> trades)</h3>
+            <div class="trade-log-wrap">
+                <table class="trade-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Symbol</th>
+                            <th>Side</th>
+                            <th>Qty</th>
+                            <th>Price</th>
+                            <th>Equity</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tradeBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Placeholder when no results -->
+        <div id="btPlaceholder" class="bt-card" style="flex:1;">
+            <div class="bt-placeholder">
+                Configure parameters and click "Run Backtest" to see results
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── CodeMirror setup ──
+let editor;
+document.addEventListener('DOMContentLoaded', () => {
+    editor = CodeMirror.fromTextArea(document.getElementById('btCode'), {
+        mode: 'python',
+        theme: 'dracula',
+        lineNumbers: true,
+        indentUnit: 4,
+        tabSize: 4,
+        indentWithTabs: false,
+        lineWrapping: true,
+    });
+
+    // Load strategy code (from session or default)
+    loadStrategyCode();
+});
+
+async function loadStrategyCode() {
+    const params = new URLSearchParams(window.location.search);
+    const sid = params.get('session_id') || '';
+    const url = sid ? `/backtest/api/load-code?session_id=${sid}` : '/backtest/api/load-code';
+    try {
+        const resp = await fetch(url);
+        const data = await resp.json();
+        editor.setValue(data.code || '');
+        // Pre-fill symbols from session if available
+        if (data.symbols && data.symbols.length > 0) {
+            document.getElementById('btSymbols').value = data.symbols.join(',');
+        }
+    } catch (e) {
+        console.error('Failed to load strategy code:', e);
+    }
+}
+
+// ── Chart instance ──
+let equityChartInstance = null;
+
+// ── Run backtest ──
+async function runBacktest() {
+    const btn = document.getElementById('btnRun');
+    const status = document.getElementById('btStatus');
+    const runtime = document.getElementById('btRuntime');
+
+    btn.disabled = true;
+    btn.classList.add('loading');
+    status.className = 'bt-status info';
+    status.textContent = 'Downloading data and running backtest...';
+    status.style.display = 'block';
+    runtime.textContent = '';
+
+    const startTime = Date.now();
+
+    const payload = {
+        strategy_code: editor.getValue(),
+        symbols: document.getElementById('btSymbols').value,
+        start_date: document.getElementById('btStartDate').value,
+        end_date: document.getElementById('btEndDate').value,
+        starting_cash: parseFloat(document.getElementById('btCash').value) || 10000,
+        interval: document.getElementById('btInterval').value,
+    };
+
+    try {
+        const resp = await fetch('/backtest/api/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const data = await resp.json();
+
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        runtime.textContent = `Completed in ${elapsed}s`;
+
+        if (!data.success) {
+            status.className = 'bt-status error';
+            status.textContent = (data.errors || ['Unknown error']).join('\n');
+            return;
+        }
+
+        status.style.display = 'none';
+        showResults(data);
+
+    } catch (e) {
+        status.className = 'bt-status error';
+        status.textContent = `Request failed: ${e.message}`;
+    } finally {
+        btn.disabled = false;
+        btn.classList.remove('loading');
+    }
+}
+
+// ── Display results ──
+function showResults(data) {
+    document.getElementById('btPlaceholder').style.display = 'none';
+
+    // Metrics
+    const m = data.metrics;
+    const metricsCard = document.getElementById('metricsCard');
+    metricsCard.style.display = 'block';
+    document.getElementById('metricsGrid').innerHTML = `
+        ${metricBox('Total Return', fmtPct(m.total_return_pct), m.total_return_pct)}
+        ${metricBox('Annualized', fmtPct(m.annualized_return_pct), m.annualized_return_pct)}
+        ${metricBox('Sharpe Ratio', m.sharpe_ratio.toFixed(2), m.sharpe_ratio)}
+        ${metricBox('Max Drawdown', fmtPct(-m.max_drawdown_pct), -m.max_drawdown_pct)}
+        ${metricBox('Win Rate', m.win_rate_pct.toFixed(1) + '%', m.win_rate_pct - 50)}
+        ${metricBox('Profit Factor', m.profit_factor === Infinity ? '∞' : m.profit_factor.toFixed(2), m.profit_factor - 1)}
+        ${metricBox('Total Trades', m.total_trades, 0)}
+        ${metricBox('Winners', m.winning_trades, 0)}
+        ${metricBox('Losers', m.losing_trades, 0)}
+    `;
+
+    // Chart
+    const chartCard = document.getElementById('chartCard');
+    chartCard.style.display = 'block';
+    renderEquityChart(data.equity_curve);
+
+    // Trades
+    const tradesCard = document.getElementById('tradesCard');
+    tradesCard.style.display = 'block';
+    document.getElementById('tradeCount').textContent = data.trades.length;
+
+    const tbody = document.getElementById('tradeBody');
+    tbody.innerHTML = data.trades.map(t => `
+        <tr>
+            <td>${t.timestamp}</td>
+            <td>${t.symbol}</td>
+            <td class="${t.side}">${t.side.toUpperCase()}</td>
+            <td>${fmtNum(t.quantity)}</td>
+            <td>$${fmtNum(t.price)}</td>
+            <td>$${fmtNum(t.equity_after)}</td>
+        </tr>
+    `).join('');
+}
+
+function metricBox(label, valueStr, colorVal) {
+    let cls = '';
+    if (typeof colorVal === 'number') {
+        if (colorVal > 0) cls = 'positive';
+        else if (colorVal < 0) cls = 'negative';
+    }
+    return `<div class="metric-item">
+        <div class="label">${label}</div>
+        <div class="value ${cls}">${valueStr}</div>
+    </div>`;
+}
+
+function fmtPct(val) { return (val >= 0 ? '+' : '') + val.toFixed(2) + '%'; }
+function fmtNum(val) {
+    if (Math.abs(val) >= 1) return val.toLocaleString(undefined, {maximumFractionDigits: 2});
+    return val.toPrecision(4);
+}
+
+function renderEquityChart(curve) {
+    const ctx = document.getElementById('equityChart').getContext('2d');
+    if (equityChartInstance) equityChartInstance.destroy();
+
+    const labels = curve.map(p => p.date);
+    const equities = curve.map(p => p.equity);
+    const cash = curve.map(p => p.cash);
+
+    equityChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: 'Total Equity',
+                    data: equities,
+                    borderColor: '#58a6ff',
+                    backgroundColor: 'rgba(88,166,255,0.1)',
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 0,
+                    borderWidth: 2,
+                },
+                {
+                    label: 'Cash',
+                    data: cash,
+                    borderColor: '#8b949e',
+                    borderDash: [4, 4],
+                    tension: 0.3,
+                    pointRadius: 0,
+                    borderWidth: 1,
+                },
+            ],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { labels: { color: '#8b949e', font: { size: 11 } } },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => `${ctx.dataset.label}: $${ctx.parsed.y.toLocaleString(undefined, {maximumFractionDigits: 0})}`,
+                    },
+                },
+            },
+            scales: {
+                x: {
+                    ticks: { color: '#484f58', maxRotation: 0, maxTicksLimit: 10 },
+                    grid: { color: '#21262d' },
+                },
+                y: {
+                    ticks: {
+                        color: '#484f58',
+                        callback: v => '$' + v.toLocaleString(),
+                    },
+                    grid: { color: '#21262d' },
+                },
+            },
+        },
+    });
+}
+
+// ── Session change hook (from base.html) ──
+function onSessionChange(sessionId) {
+    loadStrategyCode();
+}
+</script>
+{% endblock %}

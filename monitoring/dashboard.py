@@ -51,8 +51,7 @@ def create_dashboard_router(
         sessions = await session_manager.get_all_sessions()
         for s in sessions:
             s["is_running"] = session_manager.is_running(s["id"])
-        return templates.TemplateResponse("dashboard.html", {
-            "request": request,
+        return templates.TemplateResponse(request, "dashboard.html", {
             "user": get_current_user(request),
             "sessions": sessions,
             "active_page": "dashboard",

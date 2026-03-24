@@ -42,8 +42,7 @@ def create_editor_router(
         sessions = await session_manager.get_all_sessions()
         for s in sessions:
             s["is_running"] = session_manager.is_running(s["id"])
-        return templates.TemplateResponse("editor.html", {
-            "request": request,
+        return templates.TemplateResponse(request, "editor.html", {
             "user": get_current_user(request),
             "sessions": sessions,
             "active_page": "editor",
