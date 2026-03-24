@@ -3,6 +3,8 @@
 import asyncio
 import signal
 
+import uvicorn
+
 from shared.config import load_config
 from shared.redis_client import create_redis_client
 from monitoring.logger import setup_logging
@@ -12,8 +14,17 @@ from strategy.engine import StrategyEngine
 from risk.manager import RiskManager
 from execution.router import OrderRouter
 from portfolio.tracker import PortfolioTracker
-from monitoring.dashboard import run_dashboard
-from monitoring.telegram_bot import TelegramAlertBot
+from monitoring.app import create_app
+
+
+async def run_web(config, redis):
+    app = create_app(config, redis)
+    dash_cfg = config.get("monitoring", {}).get("dashboard", {})
+    host = dash_cfg.get("host", "0.0.0.0")
+    port = dash_cfg.get("port", 8080)
+    server_config = uvicorn.Config(app, host=host, port=port, log_level="info")
+    server = uvicorn.Server(server_config)
+    await server.serve()
 
 
 async def main():
@@ -34,7 +45,6 @@ async def main():
     risk_mgr = RiskManager(config, redis)
     router = OrderRouter(config, redis)
     tracker = PortfolioTracker(config, redis)
-    tg_bot = TelegramAlertBot(config, redis)
 
     # Run everything
     tasks = [
@@ -43,8 +53,7 @@ async def main():
         asyncio.create_task(risk_mgr.start(), name="risk"),
         asyncio.create_task(router.start(), name="execution"),
         asyncio.create_task(tracker.start(), name="portfolio"),
-        asyncio.create_task(run_dashboard(config, redis), name="dashboard"),
-        asyncio.create_task(tg_bot.start(), name="telegram"),
+        asyncio.create_task(run_web(config, redis), name="web"),
     ]
 
     shutdown_event = asyncio.Event()
@@ -64,7 +73,6 @@ async def main():
     await risk_mgr.stop()
     await router.stop()
     await tracker.stop()
-    await tg_bot.stop()
 
     for task in tasks:
         task.cancel()

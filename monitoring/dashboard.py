@@ -1,35 +1,44 @@
-"""FastAPI web dashboard — real-time positions, P&L, orders, kill switch."""
+"""Dashboard router — positions, P&L, orders, equity history, kill switch."""
 
 import logging
-from pathlib import Path
 
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
-import uvicorn
 
+from monitoring.auth import get_current_user, require_auth
 from risk.kill_switch import KillSwitch
 from shared.redis_client import RedisClient
 
 logger = logging.getLogger(__name__)
 
-TEMPLATES_DIR = Path(__file__).parent / "templates"
 
-
-def create_app(config: dict, redis: RedisClient) -> FastAPI:
-    """Create and return the FastAPI dashboard application."""
-    app = FastAPI(title="Quant Trader Dashboard")
-    templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+def create_dashboard_router(
+    config: dict, redis: RedisClient, templates: Jinja2Templates
+) -> APIRouter:
+    router = APIRouter()
     kill_switch = KillSwitch(
         redis, config.get("risk", {}).get("kill_switch_key", "risk:kill_switch")
     )
 
-    @app.get("/", response_class=HTMLResponse)
-    async def index(request: Request):
-        return templates.TemplateResponse("dashboard.html", {"request": request})
+    # ── Pages ────────────────────────────────────────────────────────
 
-    @app.get("/api/positions")
-    async def api_positions():
+    @router.get("/")
+    async def index(request: Request):
+        redirect = require_auth(request)
+        if redirect:
+            return redirect
+        return templates.TemplateResponse("dashboard.html", {
+            "request": request,
+            "user": get_current_user(request),
+        })
+
+    # ── API ──────────────────────────────────────────────────────────
+
+    @router.get("/api/positions")
+    async def api_positions(request: Request):
+        if not get_current_user(request):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
         state = await redis.get_flag("portfolio:state")
         if not state:
             return JSONResponse({"positions": [], "cash": 0, "total_equity": 0})
@@ -41,8 +50,10 @@ def create_app(config: dict, redis: RedisClient) -> FastAPI:
             "total_equity": state.get("total_equity", 0),
         })
 
-    @app.get("/api/pnl")
-    async def api_pnl():
+    @router.get("/api/pnl")
+    async def api_pnl(request: Request):
+        if not get_current_user(request):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
         state = await redis.get_flag("portfolio:state")
         if not state:
             return JSONResponse({"daily_pnl": 0, "total_equity": 0})
@@ -52,8 +63,10 @@ def create_app(config: dict, redis: RedisClient) -> FastAPI:
             "peak_equity": state.get("peak_equity", 0),
         })
 
-    @app.get("/api/orders")
-    async def api_orders():
+    @router.get("/api/orders")
+    async def api_orders(request: Request):
+        if not get_current_user(request):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
         try:
             from db.session import get_session
             from db.models import Order
@@ -82,8 +95,10 @@ def create_app(config: dict, redis: RedisClient) -> FastAPI:
             logger.exception("Error fetching orders")
             return JSONResponse({"orders": [], "error": str(e)})
 
-    @app.get("/api/equity-history")
-    async def api_equity_history():
+    @router.get("/api/equity-history")
+    async def api_equity_history(request: Request):
+        if not get_current_user(request):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
         try:
             from db.session import get_session
             from db.models import EquitySnapshot
@@ -112,8 +127,10 @@ def create_app(config: dict, redis: RedisClient) -> FastAPI:
             logger.exception("Error fetching equity history")
             return JSONResponse({"snapshots": [], "error": str(e)})
 
-    @app.get("/api/status")
-    async def api_status():
+    @router.get("/api/status")
+    async def api_status(request: Request):
+        if not get_current_user(request):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
         state = await redis.get_flag("portfolio:state")
         ks = await kill_switch.get_state()
         return JSONResponse({
@@ -122,8 +139,10 @@ def create_app(config: dict, redis: RedisClient) -> FastAPI:
             "open_positions": state.get("open_positions", 0) if state else 0,
         })
 
-    @app.post("/api/kill-switch")
+    @router.post("/api/kill-switch")
     async def api_kill_switch(request: Request):
+        if not get_current_user(request):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
         body = await request.json()
         action = body.get("action", "toggle")
         if action == "activate":
@@ -133,7 +152,6 @@ def create_app(config: dict, redis: RedisClient) -> FastAPI:
             await kill_switch.deactivate()
             return JSONResponse({"status": "deactivated"})
         else:
-            # Toggle
             if await kill_switch.is_active():
                 await kill_switch.deactivate()
                 return JSONResponse({"status": "deactivated"})
@@ -141,17 +159,4 @@ def create_app(config: dict, redis: RedisClient) -> FastAPI:
                 await kill_switch.activate(reason="Dashboard toggle")
                 return JSONResponse({"status": "activated"})
 
-    return app
-
-
-async def run_dashboard(config: dict, redis: RedisClient) -> None:
-    """Start the dashboard server."""
-    app = create_app(config, redis)
-    dash_cfg = config.get("monitoring", {}).get("dashboard", {})
-    host = dash_cfg.get("host", "0.0.0.0")
-    port = dash_cfg.get("port", 8080)
-
-    server_config = uvicorn.Config(app, host=host, port=port, log_level="info")
-    server = uvicorn.Server(server_config)
-    logger.info("Dashboard starting on %s:%s", host, port)
-    await server.serve()
+    return router

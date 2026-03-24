@@ -10,3 +10,5 @@ build/
 .venv/
 venv/
 *.log
+strategy/user_strategies/*.py
+!strategy/user_strategies/.gitkeep

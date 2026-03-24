@@ -55,11 +55,12 @@ portfolio:
   base_currency: "USDT"
   reconcile_interval_sec: 60
 
+auth:
+  username: "admin"
+  password: "admin1234"
+  session_ttl_hours: 24
+
 monitoring:
   dashboard:
     host: "0.0.0.0"
     port: 8080
-  telegram:
-    bot_token: ""
-    chat_id: ""
-    enabled: false

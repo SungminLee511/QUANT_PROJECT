@@ -3,63 +3,85 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quant Trader Dashboard</title>
+    <title>Dashboard — Quant Trader</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f1117; color: #e1e4e8; }
-        .header { background: #161b22; padding: 16px 24px; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; }
-        .header h1 { font-size: 20px; }
-        .kill-btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; }
-        .kill-btn.active { background: #da3633; color: white; }
-        .kill-btn.inactive { background: #238636; color: white; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; padding: 24px; }
+        a { color: #58a6ff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .nav { background: #161b22; border-bottom: 1px solid #30363d; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; }
+        .nav-left { display: flex; align-items: center; gap: 24px; }
+        .nav h1 { font-size: 18px; }
+        .nav-links { display: flex; gap: 16px; font-size: 14px; }
+        .nav-links a.active { color: #e1e4e8; font-weight: 600; border-bottom: 2px solid #58a6ff; padding-bottom: 2px; }
+        .nav-right { display: flex; align-items: center; gap: 16px; font-size: 13px; color: #8b949e; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; padding: 20px 24px; }
         .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; }
-        .card h2 { font-size: 14px; color: #8b949e; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .card h2 { font-size: 12px; color: #8b949e; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
         .metric { font-size: 28px; font-weight: 700; }
         .metric.positive { color: #3fb950; }
         .metric.negative { color: #f85149; }
+        .metric.neutral { color: #8b949e; }
         .chart-container { grid-column: 1 / -1; }
+        .kill-btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px; }
+        .kill-btn.active { background: #da3633; color: white; }
+        .kill-btn.inactive { background: #238636; color: white; }
         table { width: 100%; border-collapse: collapse; margin-top: 8px; }
         th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #21262d; font-size: 13px; }
         th { color: #8b949e; font-weight: 600; }
-        .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
-        .status-dot.filled { background: #3fb950; }
-        .status-dot.placed { background: #d29922; }
-        .status-dot.failed { background: #f85149; }
-        .refresh-note { text-align: center; color: #484f58; font-size: 12px; padding: 8px; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+        .dot.filled { background: #3fb950; }
+        .dot.placed { background: #d29922; }
+        .dot.failed { background: #f85149; }
+        .dot.pending { background: #8b949e; }
+        .refresh-note { text-align: center; color: #484f58; font-size: 11px; padding: 8px; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>Quant Trader</h1>
-        <button id="killBtn" class="kill-btn inactive" onclick="toggleKillSwitch()">Kill Switch: OFF</button>
+    <div class="nav">
+        <div class="nav-left">
+            <h1>Quant Trader</h1>
+            <div class="nav-links">
+                <a href="/" class="active">Dashboard</a>
+                <a href="/editor">Strategy Editor</a>
+            </div>
+        </div>
+        <div class="nav-right">
+            <button id="killBtn" class="kill-btn inactive" onclick="toggleKillSwitch()">Kill Switch: OFF</button>
+            <span>{{ user }}</span>
+            <a href="/logout">Logout</a>
+        </div>
     </div>
 
     <div class="grid">
         <div class="card">
             <h2>Total Equity</h2>
-            <div id="equity" class="metric">$0.00</div>
+            <div id="equity" class="metric neutral">$0.00</div>
         </div>
         <div class="card">
             <h2>Daily P&amp;L</h2>
-            <div id="dailyPnl" class="metric">$0.00</div>
+            <div id="dailyPnl" class="metric neutral">$0.00</div>
         </div>
         <div class="card">
             <h2>Open Positions</h2>
-            <div id="openPos" class="metric">0</div>
+            <div id="openPos" class="metric neutral">0</div>
+        </div>
+        <div class="card">
+            <h2>Cash</h2>
+            <div id="cash" class="metric neutral">$0.00</div>
         </div>
 
         <div class="card chart-container">
             <h2>Equity Curve</h2>
-            <canvas id="equityChart" height="80"></canvas>
+            <canvas id="equityChart" height="70"></canvas>
         </div>
 
         <div class="card">
             <h2>Positions</h2>
             <table>
                 <thead><tr><th>Symbol</th><th>Qty</th><th>Entry</th><th>Current</th><th>P&amp;L</th></tr></thead>
-                <tbody id="positionsTable"></tbody>
+                <tbody id="positionsTable"><tr><td colspan="5" style="color:#484f58">No positions</td></tr></tbody>
             </table>
         </div>
 
@@ -67,7 +89,7 @@
             <h2>Recent Orders</h2>
             <table>
                 <thead><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Status</th><th>Time</th></tr></thead>
-                <tbody id="ordersTable"></tbody>
+                <tbody id="ordersTable"><tr><td colspan="5" style="color:#484f58">No orders</td></tr></tbody>
             </table>
         </div>
     </div>
@@ -76,67 +98,47 @@
 
     <script>
         let equityChart;
-
         function initChart() {
             const ctx = document.getElementById('equityChart').getContext('2d');
             equityChart = new Chart(ctx, {
                 type: 'line',
-                data: { labels: [], datasets: [{ label: 'Equity', data: [], borderColor: '#58a6ff', backgroundColor: 'rgba(88,166,255,0.1)', fill: true, tension: 0.3, pointRadius: 0 }] },
-                options: { responsive: true, scales: { x: { display: true, ticks: { color: '#484f58', maxTicksLimit: 10 } }, y: { ticks: { color: '#484f58' }, grid: { color: '#21262d' } } }, plugins: { legend: { display: false } } }
+                data: { labels: [], datasets: [{ label: 'Equity', data: [], borderColor: '#58a6ff', backgroundColor: 'rgba(88,166,255,0.08)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2 }] },
+                options: { responsive: true, scales: { x: { ticks: { color: '#484f58', maxTicksLimit: 10 }, grid: { color: '#21262d' } }, y: { ticks: { color: '#484f58' }, grid: { color: '#21262d' } } }, plugins: { legend: { display: false } } }
             });
         }
-
+        function fmt(n) { return (n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
         async function fetchData() {
             try {
-                const [statusRes, pnlRes, ordersRes, equityRes] = await Promise.all([
-                    fetch('/api/status'), fetch('/api/pnl'), fetch('/api/orders'), fetch('/api/equity-history')
+                const [statusRes, pnlRes, posRes, ordersRes, eqRes] = await Promise.all([
+                    fetch('/api/status'), fetch('/api/pnl'), fetch('/api/positions'), fetch('/api/orders'), fetch('/api/equity-history')
                 ]);
-                const status = await statusRes.json();
-                const pnl = await pnlRes.json();
-                const orders = await ordersRes.json();
-                const equity = await equityRes.json();
-
-                // Update metrics
-                document.getElementById('equity').textContent = '$' + (pnl.total_equity || 0).toFixed(2);
-                const dailyEl = document.getElementById('dailyPnl');
-                const dp = pnl.daily_pnl || 0;
-                dailyEl.textContent = (dp >= 0 ? '+$' : '-$') + Math.abs(dp).toFixed(2);
-                dailyEl.className = 'metric ' + (dp >= 0 ? 'positive' : 'negative');
+                const status = await statusRes.json(), pnl = await pnlRes.json(), pos = await posRes.json(), orders = await ordersRes.json(), eq = await eqRes.json();
+                document.getElementById('equity').textContent = '$' + fmt(pnl.total_equity);
+                document.getElementById('cash').textContent = '$' + fmt(pos.cash);
                 document.getElementById('openPos').textContent = status.open_positions || 0;
-
-                // Kill switch button
-                const ks = status.kill_switch;
-                const btn = document.getElementById('killBtn');
+                const dp = pnl.daily_pnl || 0, dpEl = document.getElementById('dailyPnl');
+                dpEl.textContent = (dp >= 0 ? '+$' : '-$') + fmt(Math.abs(dp));
+                dpEl.className = 'metric ' + (dp > 0 ? 'positive' : dp < 0 ? 'negative' : 'neutral');
+                const ks = status.kill_switch, btn = document.getElementById('killBtn');
                 if (ks && ks.active) { btn.className = 'kill-btn active'; btn.textContent = 'Kill Switch: ON'; }
                 else { btn.className = 'kill-btn inactive'; btn.textContent = 'Kill Switch: OFF'; }
-
-                // Equity chart
-                if (equity.snapshots && equity.snapshots.length > 0) {
-                    equityChart.data.labels = equity.snapshots.map(s => new Date(s.timestamp).toLocaleTimeString());
-                    equityChart.data.datasets[0].data = equity.snapshots.map(s => s.total_equity);
+                if (eq.snapshots && eq.snapshots.length > 0) {
+                    equityChart.data.labels = eq.snapshots.map(s => new Date(s.timestamp).toLocaleTimeString());
+                    equityChart.data.datasets[0].data = eq.snapshots.map(s => s.total_equity);
                     equityChart.update();
                 }
-
-                // Orders table
-                const ot = document.getElementById('ordersTable');
-                ot.innerHTML = (orders.orders || []).slice(0, 20).map(o => {
-                    const sc = o.status === 'filled' ? 'filled' : o.status === 'placed' ? 'placed' : 'failed';
-                    return `<tr><td>${o.symbol}</td><td>${o.side}</td><td>${o.quantity}</td><td><span class="status-dot ${sc}"></span>${o.status}</td><td>${o.created_at ? new Date(o.created_at).toLocaleTimeString() : ''}</td></tr>`;
-                }).join('');
-
-            } catch (e) { console.error('Fetch error:', e); }
+                const ot = document.getElementById('ordersTable'), orderRows = (orders.orders||[]).slice(0,20);
+                ot.innerHTML = orderRows.length === 0 ? '<tr><td colspan="5" style="color:#484f58">No orders</td></tr>' :
+                    orderRows.map(o => { const sc = o.status==='filled'?'filled':o.status==='placed'?'placed':o.status==='pending'?'pending':'failed'; return `<tr><td>${o.symbol}</td><td>${o.side}</td><td>${o.quantity}</td><td><span class="dot ${sc}"></span>${o.status}</td><td>${o.created_at?new Date(o.created_at).toLocaleTimeString():''}</td></tr>`; }).join('');
+            } catch(e) { console.error('Fetch error:', e); }
         }
-
         async function toggleKillSwitch() {
             const btn = document.getElementById('killBtn');
             const action = btn.classList.contains('active') ? 'deactivate' : 'activate';
-            await fetch('/api/kill-switch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) });
+            await fetch('/api/kill-switch', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action}) });
             fetchData();
         }
-
-        initChart();
-        fetchData();
-        setInterval(fetchData, 10000);
+        initChart(); fetchData(); setInterval(fetchData, 10000);
     </script>
 </body>
 </html>

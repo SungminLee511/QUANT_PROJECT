@@ -1,0 +1,68 @@
+"""Simple session-based authentication — cookie auth, in-memory sessions."""
+
+import secrets
+import time
+from functools import wraps
+
+from fastapi import Request, Response
+from fastapi.responses import RedirectResponse
+
+SESSION_COOKIE = "qt_session"
+
+# In-memory session store: {token: {"username": str, "created_at": float}}
+_sessions: dict[str, dict] = {}
+
+
+def create_session(response: Response, username: str, ttl_hours: int = 24) -> str:
+    """Create a new session and set the cookie."""
+    token = secrets.token_urlsafe(32)
+    _sessions[token] = {
+        "username": username,
+        "created_at": time.time(),
+        "ttl": ttl_hours * 3600,
+    }
+    response.set_cookie(
+        key=SESSION_COOKIE,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        max_age=ttl_hours * 3600,
+    )
+    return token
+
+
+def get_current_user(request: Request) -> str | None:
+    """Return the username from the session cookie, or None if not logged in."""
+    token = request.cookies.get(SESSION_COOKIE)
+    if not token or token not in _sessions:
+        return None
+    session = _sessions[token]
+    # Check expiry
+    if time.time() - session["created_at"] > session["ttl"]:
+        _sessions.pop(token, None)
+        return None
+    return session["username"]
+
+
+def destroy_session(request: Request, response: Response) -> None:
+    """Log out — remove session and clear cookie."""
+    token = request.cookies.get(SESSION_COOKIE)
+    if token:
+        _sessions.pop(token, None)
+    response.delete_cookie(SESSION_COOKIE)
+
+
+def require_auth(request: Request) -> RedirectResponse | None:
+    """If not authenticated, return a redirect to /login. Otherwise None."""
+    user = get_current_user(request)
+    if user is None:
+        return RedirectResponse(url="/login", status_code=302)
+    return None
+
+
+def check_credentials(username: str, password: str, config: dict) -> bool:
+    """Validate username/password against config."""
+    auth_cfg = config.get("auth", {})
+    expected_user = auth_cfg.get("username", "admin")
+    expected_pass = auth_cfg.get("password", "admin1234")
+    return username == expected_user and password == expected_pass
