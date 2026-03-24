@@ -160,7 +160,11 @@ class RiskManager:
     async def _refresh_portfolio_state(self) -> None:
         """Pull latest portfolio state from Redis (set by portfolio tracker)."""
         try:
-            state = await self._redis.get_flag("portfolio:state")
+            # Use session-namespaced key if available (set by session manager)
+            state_key = self._config.get("risk", {}).get(
+                "portfolio_state_key", "portfolio:state"
+            )
+            state = await self._redis.get_flag(state_key)
             if state:
                 self._portfolio_state.update(state)
                 # Convert position_symbols back to a set

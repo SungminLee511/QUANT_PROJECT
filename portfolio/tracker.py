@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from db.models import Position as PositionModel, EquitySnapshot
 from db.session import get_session
 from shared.enums import OrderStatus, Side
-from shared.redis_client import RedisClient
+from shared.redis_client import RedisClient, session_channel
 from shared.schemas import OrderUpdate
 
 logger = logging.getLogger(__name__)
@@ -16,9 +16,16 @@ logger = logging.getLogger(__name__)
 class PortfolioTracker:
     """Tracks positions, balances, and publishes state to Redis."""
 
-    def __init__(self, config: dict, redis: RedisClient):
+    def __init__(
+        self,
+        config: dict,
+        redis: RedisClient,
+        session_id: str = "",
+        starting_cash: float = 10000.0,
+    ):
         self._config = config
         self._redis = redis
+        self._session_id = session_id
         self._running = False
 
         channels = config.get("redis", {}).get("channels", {})
@@ -26,10 +33,16 @@ class PortfolioTracker:
 
         # In-memory position state: {symbol: {quantity, avg_entry_price, exchange}}
         self._positions: dict[str, dict] = {}
-        self._cash: float = 10000.0  # Starting cash
-        self._peak_equity: float = 10000.0
-        self._day_start_equity: float = 10000.0
+        self._cash: float = starting_cash
+        self._peak_equity: float = starting_cash
+        self._day_start_equity: float = starting_cash
         self._prices: dict[str, float] = {}  # Latest prices per symbol
+
+        # State key — namespaced if session_id is set
+        if session_id:
+            self._state_key = session_channel(session_id, "portfolio:state")
+        else:
+            self._state_key = "portfolio:state"
 
     async def start(self) -> None:
         """Subscribe to order updates and start snapshot loop."""
@@ -47,14 +60,14 @@ class PortfolioTracker:
         # Start state publishing task
         asyncio.create_task(self._publish_state_loop())
 
-        logger.info("Portfolio tracker started")
+        logger.info("Portfolio tracker started (session=%s, cash=%.2f)", self._session_id, self._cash)
 
         while self._running:
             await asyncio.sleep(1)
 
     async def stop(self) -> None:
         self._running = False
-        logger.info("Portfolio tracker stopped")
+        logger.info("Portfolio tracker stopped (session=%s)", self._session_id)
 
     async def _on_order_update(self, data: dict) -> None:
         """Update positions based on order fill updates."""
@@ -94,8 +107,8 @@ class PortfolioTracker:
             await self._persist_position(symbol, pos)
 
             logger.info(
-                "Position updated: %s qty=%.4f avg_price=%.2f",
-                symbol, pos["quantity"], pos["avg_entry_price"],
+                "Position updated: %s qty=%.4f avg_price=%.2f (session=%s)",
+                symbol, pos["quantity"], pos["avg_entry_price"], self._session_id,
             )
 
         except Exception:
@@ -161,7 +174,7 @@ class PortfolioTracker:
                     ],
                     "prices": self._prices,
                 }
-                await self._redis.set_flag("portfolio:state", state)
+                await self._redis.set_flag(self._state_key, state)
             except Exception:
                 logger.exception("Error publishing portfolio state")
             await asyncio.sleep(5)
@@ -171,25 +184,35 @@ class PortfolioTracker:
         interval = self._config.get("portfolio", {}).get("reconcile_interval_sec", 60)
         while self._running:
             await asyncio.sleep(interval)
+            if not self._session_id:
+                continue  # Skip DB writes if no session (legacy mode)
             try:
                 equity = self.get_total_equity()
                 async with get_session() as session:
                     snapshot = EquitySnapshot(
+                        session_id=self._session_id,
                         total_equity=equity,
                         cash=self._cash,
                         positions_value=self.get_positions_value(),
                     )
                     session.add(snapshot)
-                logger.debug("Equity snapshot: %.2f", equity)
+                logger.debug("Equity snapshot: %.2f (session=%s)", equity, self._session_id)
             except Exception:
                 logger.exception("Error saving equity snapshot")
 
     async def _persist_position(self, symbol: str, pos: dict) -> None:
         """Upsert position to DB."""
+        if not self._session_id:
+            return  # Skip DB writes if no session (legacy mode)
         try:
             async with get_session() as session:
-                from sqlalchemy import select
-                stmt = select(PositionModel).where(PositionModel.symbol == symbol)
+                from sqlalchemy import select, and_
+                stmt = select(PositionModel).where(
+                    and_(
+                        PositionModel.session_id == self._session_id,
+                        PositionModel.symbol == symbol,
+                    )
+                )
                 result = await session.execute(stmt)
                 existing = result.scalar_one_or_none()
 
@@ -203,6 +226,7 @@ class PortfolioTracker:
                     existing.unrealized_pnl = unrealized
                 else:
                     db_pos = PositionModel(
+                        session_id=self._session_id,
                         symbol=symbol,
                         exchange=pos.get("exchange", ""),
                         quantity=pos["quantity"],

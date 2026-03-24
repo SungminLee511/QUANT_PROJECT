@@ -6,8 +6,7 @@ import uuid
 
 from db.session import get_session
 from db.models import Order as OrderModel
-from execution.alpaca_adapter import AlpacaAdapter
-from execution.binance_adapter import BinanceAdapter
+from execution.base_adapter import BaseExchangeAdapter
 from execution.order import OrderState
 from shared.enums import Exchange, OrderStatus
 from shared.redis_client import RedisClient
@@ -19,11 +18,19 @@ logger = logging.getLogger(__name__)
 class OrderRouter:
     """Routes orders to the correct exchange and tracks their lifecycle."""
 
-    def __init__(self, config: dict, redis: RedisClient):
+    def __init__(
+        self,
+        config: dict,
+        redis: RedisClient,
+        sim_adapter: BaseExchangeAdapter | None = None,
+        session_id: str = "",
+    ):
         self._config = config
         self._redis = redis
-        self._binance: BinanceAdapter | None = None
-        self._alpaca: AlpacaAdapter | None = None
+        self._session_id = session_id
+        self._sim_adapter = sim_adapter
+        self._binance: BaseExchangeAdapter | None = None
+        self._alpaca: BaseExchangeAdapter | None = None
         self._open_orders: dict[str, OrderState] = {}
         self._running = False
 
@@ -33,24 +40,28 @@ class OrderRouter:
 
     async def start(self) -> None:
         """Connect adapters, subscribe to orders, start polling."""
-        # Initialize adapters
-        if self._config.get("binance", {}).get("api_key"):
-            self._binance = BinanceAdapter(self._config)
-            await self._binance.connect()
+        # If we have a sim adapter, skip real adapter initialization
+        if self._sim_adapter is None:
+            if self._config.get("binance", {}).get("api_key"):
+                from execution.binance_adapter import BinanceAdapter
+                self._binance = BinanceAdapter(self._config)
+                await self._binance.connect()
 
-        if self._config.get("alpaca", {}).get("api_key"):
-            self._alpaca = AlpacaAdapter(self._config)
-            await self._alpaca.connect()
+            if self._config.get("alpaca", {}).get("api_key"):
+                from execution.alpaca_adapter import AlpacaAdapter
+                self._alpaca = AlpacaAdapter(self._config)
+                await self._alpaca.connect()
 
         self._running = True
 
         # Subscribe to order requests
         await self._redis.subscribe(self._order_channel, self._on_order_request)
 
-        # Start order status polling loop
-        asyncio.create_task(self._poll_open_orders())
+        # Start order status polling loop (not needed for sim, but harmless)
+        if self._sim_adapter is None:
+            asyncio.create_task(self._poll_open_orders())
 
-        logger.info("Order router started")
+        logger.info("Order router started (session=%s, sim=%s)", self._session_id, self._sim_adapter is not None)
 
         while self._running:
             await asyncio.sleep(1)
@@ -61,7 +72,7 @@ class OrderRouter:
             await self._binance.disconnect()
         if self._alpaca:
             await self._alpaca.disconnect()
-        logger.info("Order router stopped")
+        logger.info("Order router stopped (session=%s)", self._session_id)
 
     async def _on_order_request(self, data: dict) -> None:
         """Handle an incoming OrderRequest."""
@@ -83,7 +94,7 @@ class OrderRouter:
             # Route to the correct adapter
             adapter = self._get_adapter(request.exchange)
             if adapter is None:
-                logger.error("No adapter for exchange %s", request.exchange.value)
+                logger.error("No adapter for exchange %s (session=%s)", request.exchange.value, self._session_id)
                 order.transition(OrderStatus.FAILED)
                 return
 
@@ -91,9 +102,18 @@ class OrderRouter:
             try:
                 external_id = await adapter.place_order(request)
                 order.external_id = external_id
-                order.transition(OrderStatus.PLACED)
+
+                # Sim adapter fills instantly — go straight to FILLED
+                if self._sim_adapter is not None:
+                    order.transition(OrderStatus.PLACED)
+                    order.transition(OrderStatus.FILLED)
+                    sim_status = await adapter.get_order_status(external_id)
+                    order.filled_quantity = sim_status.filled_qty
+                    order.avg_price = sim_status.avg_price
+                else:
+                    order.transition(OrderStatus.PLACED)
             except Exception:
-                logger.exception("Failed to place order %s", order_id)
+                logger.exception("Failed to place order %s (session=%s)", order_id, self._session_id)
                 order.transition(OrderStatus.FAILED)
                 return
 
@@ -101,21 +121,27 @@ class OrderRouter:
             self._open_orders[order_id] = order
             await self._persist_order(order)
 
-            # Publish initial update
+            # Publish update
             update = OrderUpdate(
                 order_id=order_id,
                 external_id=external_id,
                 symbol=request.symbol,
                 side=request.side,
                 status=order.status,
+                filled_qty=order.filled_quantity,
+                avg_price=order.avg_price,
                 exchange=request.exchange,
+                session_id=self._session_id,
             )
             await self._redis.publish(self._update_channel, update)
 
         except Exception:
-            logger.exception("Error processing order request")
+            logger.exception("Error processing order request (session=%s)", self._session_id)
 
     def _get_adapter(self, exchange: Exchange):
+        # If we have a sim adapter, always use it regardless of exchange
+        if self._sim_adapter is not None:
+            return self._sim_adapter
         if exchange == Exchange.BINANCE:
             return self._binance
         elif exchange == Exchange.ALPACA:
@@ -151,6 +177,7 @@ class OrderRouter:
                         order.avg_price = update.avg_price
 
                         update.order_id = order_id
+                        update.session_id = self._session_id
                         await self._redis.publish(self._update_channel, update)
                         await self._persist_order(order)
 
@@ -169,7 +196,6 @@ class OrderRouter:
         """Persist order state to the database."""
         try:
             async with get_session() as session:
-                # Upsert: check if order exists
                 from sqlalchemy import select
                 stmt = select(OrderModel).where(
                     OrderModel.external_id == order.external_id
@@ -183,6 +209,7 @@ class OrderRouter:
                     existing.updated_at = order.updated_at
                 else:
                     db_order = OrderModel(
+                        session_id=self._session_id,
                         external_id=order.external_id or order.order_id,
                         symbol=order.symbol,
                         side=order.side.value,
