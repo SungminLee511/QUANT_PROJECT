@@ -66,6 +66,10 @@ class DataCollector:
             elif isinstance(field_cfg, int) and field_cfg > 0:
                 self.fields[field_name] = field_cfg
 
+        # Fallback: if no builtin fields enabled, default to price with lookback 20
+        if not self.fields:
+            self.fields["price"] = 20
+
         # Custom data configs
         self.custom_data = data_config.get("custom_data", [])
         self.custom_global_data = data_config.get("custom_global_data", [])

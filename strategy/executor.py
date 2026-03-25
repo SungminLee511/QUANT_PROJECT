@@ -124,4 +124,17 @@ def _safe_builtins() -> dict:
         "True", "False", "None",
     }
 
-    return {k: getattr(builtins, k) for k in allowed if hasattr(builtins, k)}
+    safe = {k: getattr(builtins, k) for k in allowed if hasattr(builtins, k)}
+
+    # Whitelisted import: only allow safe modules
+    _IMPORT_WHITELIST = {"numpy", "math", "statistics", "collections", "itertools", "functools"}
+
+    def _restricted_import(name, *args, **kwargs):
+        # Allow whitelisted modules and their submodules (e.g. numpy._core._methods)
+        top_level = name.split(".")[0]
+        if top_level not in _IMPORT_WHITELIST:
+            raise ImportError(f"Import of '{name}' is not allowed in strategy code.")
+        return builtins.__import__(name, *args, **kwargs)
+
+    safe["__import__"] = _restricted_import
+    return safe

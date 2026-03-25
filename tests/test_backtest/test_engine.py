@@ -1,5 +1,6 @@
-"""Tests for the backtesting engine."""
+"""Tests for the V2 backtesting engine."""
 
+import numpy as np
 import pytest
 
 from backtest.engine import (
@@ -7,169 +8,139 @@ from backtest.engine import (
     BacktestTrade,
     _VirtualPortfolio,
     _compute_metrics,
-    _load_strategy_from_code,
+    _build_data_snapshot,
+    _append_to_buffer,
 )
-from shared.enums import Signal
-from shared.schemas import TradeSignal
 
 
 # ---------------------------------------------------------------------------
-# Strategy code fixtures
+# Strategy code fixtures (V2 format)
 # ---------------------------------------------------------------------------
 
-VALID_STRATEGY = '''
-from strategy.base import BaseStrategy
-from shared.schemas import MarketTick, OHLCVBar, TradeSignal
-from shared.enums import Signal
+MOMENTUM_V2 = '''
+import numpy as np
 
-class TestStrategy(BaseStrategy):
-    def __init__(self, strategy_id, params):
-        super().__init__(strategy_id, params)
-        self._count = 0
-
-    async def on_tick(self, tick, extra_data=None):
-        self._count += 1
-        if self._count == 3:
-            return TradeSignal(
-                symbol=tick.symbol,
-                signal=Signal.BUY,
-                strength=0.5,
-                strategy_id=self.strategy_id,
-            )
-        return None
-
-    async def on_bar(self, bar, extra_data=None):
-        return None
+def main(data: dict) -> np.ndarray:
+    prices = data["price"]
+    current = prices[:, -1]
+    mean = prices.mean(axis=1)
+    safe_mean = np.where(mean != 0, mean, 1.0)
+    deviation = (current - safe_mean) / safe_mean
+    return deviation
 '''
 
-ALWAYS_BUY_STRATEGY = '''
-from strategy.base import BaseStrategy
-from shared.schemas import MarketTick, OHLCVBar, TradeSignal
-from shared.enums import Signal
+ALL_LONG = '''
+import numpy as np
 
-class AlwaysBuy(BaseStrategy):
-    async def on_tick(self, tick, extra_data=None):
-        return TradeSignal(
-            symbol=tick.symbol,
-            signal=Signal.BUY,
-            strength=0.1,
-            strategy_id=self.strategy_id,
-        )
+def main(data: dict) -> np.ndarray:
+    n = len(data["tickers"])
+    return np.ones(n) / n  # equal weight long
+'''
 
-    async def on_bar(self, bar, extra_data=None):
-        return None
+ALL_ZERO = '''
+import numpy as np
+
+def main(data: dict) -> np.ndarray:
+    return np.zeros(len(data["tickers"]))
 '''
 
 INVALID_STRATEGY = '''
-class NotAStrategy:
-    def run(self):
-        pass
+def not_main(x):
+    pass
 '''
 
 
 # ---------------------------------------------------------------------------
-# _load_strategy_from_code
-# ---------------------------------------------------------------------------
-
-class TestLoadStrategy:
-    def test_valid_strategy_loads(self):
-        strategy = _load_strategy_from_code(VALID_STRATEGY)
-        assert strategy.strategy_id == "backtest"
-
-    def test_invalid_strategy_raises(self):
-        with pytest.raises(ValueError, match="No BaseStrategy subclass"):
-            _load_strategy_from_code(INVALID_STRATEGY)
-
-    def test_strategy_with_params(self):
-        strategy = _load_strategy_from_code(
-            VALID_STRATEGY,
-            strategy_id="custom",
-            params={"lookback": 10},
-        )
-        assert strategy.strategy_id == "custom"
-        assert strategy.params == {"lookback": 10}
-
-
-# ---------------------------------------------------------------------------
-# _VirtualPortfolio
+# _VirtualPortfolio (V2 — weight-based)
 # ---------------------------------------------------------------------------
 
 class TestVirtualPortfolio:
     def test_initial_state(self):
-        p = _VirtualPortfolio(10000)
+        p = _VirtualPortfolio(10000, ["AAPL", "MSFT"])
         assert p.cash == 10000
         assert p.get_equity() == 10000
         assert p.positions == {}
 
-    def test_buy_signal(self):
-        p = _VirtualPortfolio(10000)
-        p.update_price("AAPL", 150.0)
-        signal = TradeSignal(
-            symbol="AAPL", signal=Signal.BUY, strength=0.5,
-            strategy_id="test",
-        )
-        trade = p.execute_signal(signal, 150.0)
-        assert trade is not None
-        assert trade.side == "buy"
-        assert trade.symbol == "AAPL"
+    def test_rebalance_buy(self):
+        p = _VirtualPortfolio(10000, ["AAPL", "MSFT"])
+        p.update_prices({"AAPL": 150.0, "MSFT": 300.0})
+        weights = np.array([0.6, 0.4])
+        trades = p.rebalance(weights, "2024-01-01")
+        assert len(trades) == 2
+        assert all(t.side == "buy" for t in trades)
+        # Cash should be reduced
         assert p.cash < 10000
+        assert p.get_equity() == pytest.approx(10000, abs=5)
+
+    def test_rebalance_sell(self):
+        p = _VirtualPortfolio(10000, ["AAPL"])
+        p.update_prices({"AAPL": 100.0})
+        # First buy in
+        weights_buy = np.array([0.8])
+        p.rebalance(weights_buy, "2024-01-01")
         assert "AAPL" in p.positions
+        # Now rebalance down
+        weights_sell = np.array([0.2])
+        trades = p.rebalance(weights_sell, "2024-01-02")
+        sell_trades = [t for t in trades if t.side == "sell"]
+        assert len(sell_trades) >= 1
 
-    def test_sell_signal_no_position(self):
-        p = _VirtualPortfolio(10000)
-        signal = TradeSignal(
-            symbol="AAPL", signal=Signal.SELL, strength=1.0,
-            strategy_id="test",
-        )
-        trade = p.execute_signal(signal, 150.0)
-        assert trade is None
-
-    def test_buy_then_sell(self):
-        p = _VirtualPortfolio(10000)
-        p.update_price("AAPL", 100.0)
-        buy_signal = TradeSignal(
-            symbol="AAPL", signal=Signal.BUY, strength=1.0,
-            strategy_id="test",
-        )
-        p.execute_signal(buy_signal, 100.0)
+    def test_rebalance_zero_weights_sells_all(self):
+        p = _VirtualPortfolio(10000, ["AAPL"])
+        p.update_prices({"AAPL": 100.0})
+        p.rebalance(np.array([1.0]), "2024-01-01")
         assert "AAPL" in p.positions
+        # Flatten
+        trades = p.rebalance(np.array([0.0]), "2024-01-02")
+        assert len(trades) >= 1
+        assert p.positions.get("AAPL", 0) < 0.01
 
-        # Price goes up
-        p.update_price("AAPL", 110.0)
-        sell_signal = TradeSignal(
-            symbol="AAPL", signal=Signal.SELL, strength=1.0,
-            strategy_id="test",
-        )
-        trade = p.execute_signal(sell_signal, 110.0)
-        assert trade is not None
-        assert trade.side == "sell"
-        # Should have profit
+    def test_equity_tracks_price_changes(self):
+        p = _VirtualPortfolio(10000, ["AAPL"])
+        p.update_prices({"AAPL": 100.0})
+        p.rebalance(np.array([1.0]), "2024-01-01")
+        # Price doubles
+        p.update_prices({"AAPL": 200.0})
         assert p.get_equity() > 10000
 
-    def test_hold_signal_ignored(self):
-        p = _VirtualPortfolio(10000)
-        signal = TradeSignal(
-            symbol="AAPL", signal=Signal.HOLD, strength=1.0,
-            strategy_id="test",
-        )
-        trade = p.execute_signal(signal, 150.0)
-        assert trade is None
-        assert p.cash == 10000
+    def test_wrong_shape_returns_no_trades(self):
+        p = _VirtualPortfolio(10000, ["AAPL", "MSFT"])
+        p.update_prices({"AAPL": 100.0, "MSFT": 200.0})
+        trades = p.rebalance(np.array([1.0]), "2024-01-01")  # wrong shape
+        assert trades == []
 
-    def test_equity_tracks_positions(self):
-        p = _VirtualPortfolio(10000)
-        p.update_price("AAPL", 100.0)
-        buy = TradeSignal(
-            symbol="AAPL", signal=Signal.BUY, strength=1.0,
-            strategy_id="test",
-        )
-        p.execute_signal(buy, 100.0)
 
-        # Price doubles
-        p.update_price("AAPL", 200.0)
-        equity = p.get_equity()
-        # Equity should be > 10000 due to position appreciation
-        assert equity > 10000
+# ---------------------------------------------------------------------------
+# Rolling buffer helpers
+# ---------------------------------------------------------------------------
+
+class TestRollingBuffers:
+    def test_append_and_snapshot(self):
+        symbols = ["A", "B"]
+        fields = {"price": 3}
+        buffers = {"price": np.full((2, 13), np.nan)}
+        fill_counts = {"price": 0}
+
+        # Append 3 bars
+        for i in range(3):
+            vals = np.array([100.0 + i, 200.0 + i])
+            _append_to_buffer(buffers, fill_counts, "price", vals)
+
+        assert fill_counts["price"] == 3
+
+        snapshot = _build_data_snapshot(buffers, fill_counts, fields, symbols)
+        assert snapshot is not None
+        assert snapshot["price"].shape == (2, 3)
+        assert snapshot["price"][0, -1] == 102.0
+        assert snapshot["price"][1, -1] == 202.0
+        assert snapshot["tickers"] == symbols
+
+    def test_snapshot_returns_none_if_insufficient_data(self):
+        fields = {"price": 5}
+        buffers = {"price": np.full((2, 15), np.nan)}
+        fill_counts = {"price": 2}
+        result = _build_data_snapshot(buffers, fill_counts, fields, ["A", "B"])
+        assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -199,15 +170,14 @@ class TestComputeMetrics:
             {"date": "2024-01-04", "equity": 10000},
         ]
         m = _compute_metrics(curve, [], 10000)
-        # Peak was 11000, trough was 9000 → drawdown = 2000/11000 ≈ 18.18%
         assert m.max_drawdown_pct == pytest.approx(18.18, abs=0.1)
 
     def test_trade_win_rate(self):
         trades = [
-            BacktestTrade("2024-01-01", "AAPL", "buy", 10, 100, 9000, 10000),
-            BacktestTrade("2024-01-02", "AAPL", "sell", 10, 120, 10200, 10200),  # win
-            BacktestTrade("2024-01-03", "AAPL", "buy", 10, 110, 9100, 10200),
-            BacktestTrade("2024-01-04", "AAPL", "sell", 10, 100, 10100, 10100),  # loss
+            BacktestTrade("2024-01-01", "AAPL", "buy", 10, 100, 1000, 9000, 10000),
+            BacktestTrade("2024-01-02", "AAPL", "sell", 10, 120, 1200, 10200, 10200),
+            BacktestTrade("2024-01-03", "AAPL", "buy", 10, 110, 1100, 9100, 10200),
+            BacktestTrade("2024-01-04", "AAPL", "sell", 10, 100, 1000, 10100, 10100),
         ]
         curve = [
             {"date": "2024-01-01", "equity": 10000},
@@ -220,3 +190,10 @@ class TestComputeMetrics:
         assert m.winning_trades == 1
         assert m.losing_trades == 1
         assert m.win_rate_pct == 50.0
+
+    def test_sharpe_ratio_positive(self):
+        # Steady gains -> positive Sharpe
+        curve = [{"date": f"2024-01-{i+1:02d}", "equity": 10000 + i * 10}
+                 for i in range(30)]
+        m = _compute_metrics(curve, [], 10000)
+        assert m.sharpe_ratio > 0

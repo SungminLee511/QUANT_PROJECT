@@ -8,6 +8,7 @@ from risk.limits import (
     check_daily_loss,
     check_drawdown,
     check_max_positions,
+    check_portfolio_risk,
     check_position_size,
 )
 
@@ -100,3 +101,53 @@ class TestDailyLoss:
         state = {"day_start_equity": 10000, "daily_pnl": 500}
         approved, _ = check_daily_loss(state, risk_config)
         assert approved is True
+
+
+# ---------------------------------------------------------------------------
+# V2 combined portfolio risk check
+# ---------------------------------------------------------------------------
+
+class TestPortfolioRisk:
+    def test_passes_when_all_ok(self, risk_config):
+        state = {
+            "total_equity": 9800,
+            "peak_equity": 10000,
+            "day_start_equity": 10000,
+            "daily_pnl": -100,
+        }
+        ok, reason = check_portfolio_risk(state, risk_config)
+        assert ok is True
+
+    def test_fails_on_drawdown(self, risk_config):
+        state = {
+            "total_equity": 9400,
+            "peak_equity": 10000,
+            "day_start_equity": 10000,
+            "daily_pnl": -100,
+        }
+        ok, reason = check_portfolio_risk(state, risk_config)
+        assert ok is False
+        assert "Drawdown" in reason
+
+    def test_fails_on_daily_loss(self, risk_config):
+        state = {
+            "total_equity": 9800,
+            "peak_equity": 10000,
+            "day_start_equity": 10000,
+            "daily_pnl": -400,
+        }
+        ok, reason = check_portfolio_risk(state, risk_config)
+        assert ok is False
+        assert "Daily loss" in reason
+
+    def test_drawdown_checked_first(self, risk_config):
+        """If both drawdown and daily loss breach, drawdown reason comes first."""
+        state = {
+            "total_equity": 9000,
+            "peak_equity": 10000,
+            "day_start_equity": 10000,
+            "daily_pnl": -500,
+        }
+        ok, reason = check_portfolio_risk(state, risk_config)
+        assert ok is False
+        assert "Drawdown" in reason
