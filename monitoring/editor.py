@@ -1,7 +1,9 @@
-"""Strategy editor router — load, save, validate, and deploy user strategies.
+"""Strategy editor router (V2) — tabbed UI for data config, custom data, and strategy code.
 
-When session_id is provided, strategy code is stored in the DB (TradingSession.strategy_code)
-rather than the filesystem, enabling per-session strategies.
+Three tabs:
+1. Data Config — resolution, fields, lookbacks, strategy execution multiplier
+2. Custom Data Functions — user-provided fetch() functions for extra data
+3. Strategy Code — main(data) function
 """
 
 import json
@@ -14,16 +16,15 @@ from fastapi.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
 
 from monitoring.auth import get_current_user, require_auth
-from session.manager import SessionManager
+from session.manager import SessionManager, DEFAULT_DATA_CONFIG
 from shared.redis_client import RedisClient
-from strategy.validator import validate_strategy_code
+from strategy.validator_v2 import validate_strategy_code
+from strategy.custom_validator import validate_custom_data_function
 
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_STRATEGY = PROJECT_ROOT / "strategy" / "examples" / "momentum.py"
-USER_STRATEGIES_DIR = PROJECT_ROOT / "strategy" / "user_strategies"
-ACTIVE_STRATEGY_FILE = USER_STRATEGIES_DIR / "active_strategy.py"
+DEFAULT_STRATEGY = PROJECT_ROOT / "strategy" / "examples" / "momentum_v2.py"
 
 
 def create_editor_router(
@@ -49,157 +50,171 @@ def create_editor_router(
             "selected_session": session_id,
         })
 
-    # ── API ──────────────────────────────────────────────────────────
+    # ── Load all editor data ──────────────────────────────────────────
 
     @router.get("/api/load")
-    async def load_strategy(request: Request, session_id: Optional[str] = Query(None)):
-        """Load strategy code. If session_id provided, loads from DB; else from filesystem."""
+    async def load_editor_data(request: Request, session_id: Optional[str] = Query(None)):
+        """Load all editor data: strategy code, data config, custom data functions."""
         if not get_current_user(request):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
 
         if session_id:
-            # Load from DB
             info = await session_manager.get_session_info(session_id)
-            if info and info.get("strategy_code"):
+            if info:
                 return JSONResponse({
-                    "code": info["strategy_code"],
-                    "source": "session",
+                    "strategy_code": info.get("strategy_code") or DEFAULT_STRATEGY.read_text(),
+                    "data_config": info.get("data_config") or DEFAULT_DATA_CONFIG,
+                    "custom_data_code": info.get("custom_data_code") or [],
+                    "source": "session" if info.get("strategy_code") else "default",
                     "session_id": session_id,
                 })
 
-        # Fallback: try active user strategy, then default
-        if ACTIVE_STRATEGY_FILE.exists():
-            code = ACTIVE_STRATEGY_FILE.read_text()
-            source = "user"
-        else:
-            code = DEFAULT_STRATEGY.read_text()
-            source = "default"
+        # Fallback: default
+        return JSONResponse({
+            "strategy_code": DEFAULT_STRATEGY.read_text(),
+            "data_config": DEFAULT_DATA_CONFIG,
+            "custom_data_code": [],
+            "source": "default",
+        })
 
-        return JSONResponse({"code": code, "source": source})
+    # ── Validate strategy code ────────────────────────────────────────
 
     @router.post("/api/validate")
     async def validate_strategy(request: Request):
-        """Validate strategy code without saving."""
+        """Validate V2 strategy code (main function)."""
         if not get_current_user(request):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
 
         body = await request.json()
         code = body.get("code", "")
+        data_config = body.get("data_config")
 
         if not code.strip():
             return JSONResponse({
                 "valid": False,
                 "errors": ["Code is empty"],
                 "warnings": [],
-                "class_name": "",
             })
 
-        result = validate_strategy_code(code)
+        result = validate_strategy_code(code, data_config)
         return JSONResponse({
             "valid": result.valid,
             "errors": result.errors,
             "warnings": result.warnings,
-            "class_name": result.class_name,
         })
 
-    @router.post("/api/deploy")
-    async def deploy_strategy(request: Request, session_id: Optional[str] = Query(None)):
-        """Validate, save, and hot-reload the strategy.
+    # ── Validate custom data function ─────────────────────────────────
 
-        If session_id is provided, saves to DB and signals that session's strategy engine.
-        Otherwise saves to filesystem (legacy single-session mode).
-        """
+    @router.post("/api/validate-custom")
+    async def validate_custom(request: Request):
+        """Validate a custom data function."""
         if not get_current_user(request):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
 
         body = await request.json()
         code = body.get("code", "")
-        # Allow session_id in body too (from frontend)
-        session_id = session_id or body.get("session_id")
+        func_type = body.get("type", "per_stock")
 
         if not code.strip():
             return JSONResponse({
-                "deployed": False,
+                "valid": False,
                 "errors": ["Code is empty"],
+                "warnings": [],
             })
 
-        # Validate first
-        result = validate_strategy_code(code)
-        if not result.valid:
-            return JSONResponse({
-                "deployed": False,
-                "errors": result.errors,
-            })
+        result = validate_custom_data_function(code, func_type)
+        return JSONResponse({
+            "valid": result.valid,
+            "errors": result.errors,
+            "warnings": result.warnings,
+        })
 
-        if session_id:
-            # Save to DB
-            from sqlalchemy import select
-            from db.session import get_session as get_db_session
-            from db.models import TradingSession
+    # ── Deploy (save all) ─────────────────────────────────────────────
 
-            try:
-                async with get_db_session() as db:
-                    stmt = select(TradingSession).where(TradingSession.id == session_id)
-                    res = await db.execute(stmt)
-                    ts = res.scalar_one_or_none()
-                    if ts is None:
-                        return JSONResponse({"deployed": False, "errors": ["Session not found"]})
-                    ts.strategy_code = code
-                    ts.strategy_class = result.class_name
+    @router.post("/api/deploy")
+    async def deploy_all(request: Request, session_id: Optional[str] = Query(None)):
+        """Validate and save all three sections to DB.
 
-                logger.info(
-                    "Strategy deployed to session %s: class=%s",
-                    session_id, result.class_name,
-                )
-
-                # Signal session's strategy engine to reload
-                from shared.redis_client import session_channel
-                reload_key = session_channel(session_id, "strategy:reload")
-                await redis.set_flag(reload_key, {
-                    "class_name": result.class_name,
-                    "source": "session_db",
-                })
-                await redis.redis.publish(reload_key, "reload")
-
-                return JSONResponse({
-                    "deployed": True,
-                    "class_name": result.class_name,
-                    "message": f"Strategy '{result.class_name}' deployed to session.",
-                })
-            except Exception as e:
-                logger.exception("Failed to deploy strategy to session %s", session_id)
-                return JSONResponse({"deployed": False, "errors": [str(e)]})
-        else:
-            # Legacy: save to filesystem
-            USER_STRATEGIES_DIR.mkdir(parents=True, exist_ok=True)
-            ACTIVE_STRATEGY_FILE.write_text(code)
-            logger.info(
-                "Strategy deployed: class=%s, saved to %s",
-                result.class_name, ACTIVE_STRATEGY_FILE,
-            )
-
-            try:
-                await redis.set_flag("strategy:reload", {
-                    "module": "strategy.user_strategies.active_strategy",
-                    "class_name": result.class_name,
-                })
-                await redis.redis.publish("strategy:reload", "reload")
-            except Exception:
-                logger.exception("Failed to signal strategy reload")
-
-            return JSONResponse({
-                "deployed": True,
-                "class_name": result.class_name,
-                "message": f"Strategy '{result.class_name}' deployed successfully.",
-            })
-
-    @router.post("/api/reset")
-    async def reset_to_default(request: Request):
-        """Reset to the default momentum strategy."""
+        Body: {
+            "strategy_code": "...",
+            "data_config": {...},
+            "custom_data_code": [...],
+            "session_id": "..."
+        }
+        """
         if not get_current_user(request):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
 
-        code = DEFAULT_STRATEGY.read_text()
-        return JSONResponse({"code": code, "source": "default"})
+        body = await request.json()
+        strategy_code = body.get("strategy_code", "")
+        data_config = body.get("data_config", DEFAULT_DATA_CONFIG)
+        custom_data_code = body.get("custom_data_code", [])
+        session_id = session_id or body.get("session_id")
+
+        if not session_id:
+            return JSONResponse({"deployed": False, "errors": ["No session selected"]})
+
+        errors = []
+
+        # 1. Validate strategy code
+        if strategy_code.strip():
+            result = validate_strategy_code(strategy_code, data_config)
+            if not result.valid:
+                errors.extend([f"Strategy: {e}" for e in result.errors])
+
+        # 2. Validate custom data functions
+        for i, item in enumerate(custom_data_code):
+            code = item.get("code", "")
+            func_type = item.get("type", "per_stock")
+            name = item.get("name", f"custom_{i}")
+            if code.strip():
+                result = validate_custom_data_function(code, func_type)
+                if not result.valid:
+                    errors.extend([f"Custom data '{name}': {e}" for e in result.errors])
+
+        if errors:
+            return JSONResponse({"deployed": False, "errors": errors})
+
+        # 3. Save to DB
+        from sqlalchemy import select
+        from db.session import get_session as get_db_session
+        from db.models import TradingSession
+
+        try:
+            async with get_db_session() as db:
+                stmt = select(TradingSession).where(TradingSession.id == session_id)
+                res = await db.execute(stmt)
+                ts = res.scalar_one_or_none()
+                if ts is None:
+                    return JSONResponse({"deployed": False, "errors": ["Session not found"]})
+
+                ts.strategy_code = strategy_code
+                ts.data_config = json.dumps(data_config)
+                ts.custom_data_code = json.dumps(custom_data_code)
+
+            logger.info("Strategy V2 deployed to session %s", session_id)
+
+            return JSONResponse({
+                "deployed": True,
+                "message": "Strategy deployed successfully. Restart session to apply changes.",
+            })
+        except Exception as e:
+            logger.exception("Failed to deploy to session %s", session_id)
+            return JSONResponse({"deployed": False, "errors": [str(e)]})
+
+    # ── Reset to default ──────────────────────────────────────────────
+
+    @router.post("/api/reset")
+    async def reset_to_default(request: Request):
+        """Reset to default momentum_v2 strategy and default data config."""
+        if not get_current_user(request):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+        return JSONResponse({
+            "strategy_code": DEFAULT_STRATEGY.read_text(),
+            "data_config": DEFAULT_DATA_CONFIG,
+            "custom_data_code": [],
+            "source": "default",
+        })
 
     return router
