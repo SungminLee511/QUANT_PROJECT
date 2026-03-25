@@ -39,6 +39,24 @@ class OrderType(str, Enum):
     LIMIT = "limit"
 
 
+class DataResolution(str, Enum):
+    """Time-based data scrape intervals."""
+    MIN_1 = "1min"
+    MIN_5 = "5min"
+    MIN_15 = "15min"
+    MIN_30 = "30min"
+    MIN_60 = "60min"
+    DAY_1 = "1day"
+
+    @property
+    def seconds(self) -> int:
+        """Return interval in seconds."""
+        return {
+            "1min": 60, "5min": 300, "15min": 900,
+            "30min": 1800, "60min": 3600, "1day": 86400,
+        }[self.value]
+
+
 class SessionType(str, Enum):
     BINANCE = "binance"
     ALPACA = "alpaca"

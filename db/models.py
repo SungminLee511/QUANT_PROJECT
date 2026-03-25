@@ -36,8 +36,10 @@ class TradingSession(Base):
     is_simulation: Mapped[bool] = mapped_column(Boolean, default=False)
     config_json: Mapped[str] = mapped_column(Text, default="{}")  # per-session config (API keys, symbols, etc.)
     starting_budget: Mapped[float] = mapped_column(Float, nullable=True)  # sim only
-    strategy_code: Mapped[str] = mapped_column(Text, nullable=True)  # user strategy source code
-    strategy_class: Mapped[str] = mapped_column(String(128), nullable=True)
+    strategy_code: Mapped[str] = mapped_column(Text, nullable=True)  # user main() function source
+    strategy_class: Mapped[str] = mapped_column(String(128), nullable=True)  # deprecated (v1)
+    data_config: Mapped[str] = mapped_column(Text, nullable=True)  # JSON: resolution, fields, lookbacks, exec_every_n
+    custom_data_code: Mapped[str] = mapped_column(Text, nullable=True)  # JSON: list of custom data functions
     status: Mapped[str] = mapped_column(String(20), default="stopped")  # active, stopped, error
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
