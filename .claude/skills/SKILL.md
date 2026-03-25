@@ -740,6 +740,10 @@ See **[BUG_FIX_GUIDE.md](BUG_FIX_GUIDE.md)** for known bugs, root causes, and st
 | BUG 6: No Redis persistence config | **MEDIUM** | No AOF enabled → lose cached state on unclean shutdown. Fix: `redis-server --appendonly yes`. |
 | BUG 7: Alembic hardcoded connection string | **MEDIUM** | `localhost` in alembic.ini fails inside Docker (host is `postgres`). Fix: override URL from env vars in `env.py`. |
 | BUG 8: No graceful shutdown handling | **LOW** | No SIGTERM handler → incomplete transactions, orphaned connections. Fix: register signal handlers in entry points. |
+| ~~BUG 9: No market ticks in V2~~ | **CRITICAL** | DataCollector stored prices in buffers but never published to `market:ticks` → SimAdapter had no prices → every order rejected. **Fixed:** `on_scrape_complete` now publishes `MarketTick` per symbol. |
+| ~~BUG 10: Portfolio state missing positions~~ | **HIGH** | `_publish_state_loop` published symbol names only, not quantities → rebalancer always saw empty portfolio. **Fixed:** Added `positions` list with `symbol`, `quantity`, `avg_entry_price`. |
+| ~~BUG 11: _run_with_restart can't restart~~ | **HIGH** | Passed coroutine objects (single-use) → retry attempts raised `RuntimeError`. **Fixed:** Changed to accept lambda factory that creates a fresh coroutine per attempt. |
+| ~~BUG 12: Failed orders not persisted~~ | **MEDIUM** | `return` in except block skipped `_persist_order()` → failed orders invisible. **Fixed:** Failed orders now persisted with FAILED status + error log. |
 
 ---
 
@@ -766,7 +770,9 @@ See **[BUG_FIX_GUIDE.md](BUG_FIX_GUIDE.md)** for known bugs, root causes, and st
 - **API keys not encrypted** in DB — `TradingSession.config_json` stores plaintext (personal system, not public-facing).
 - **Session auto-restart** — on container boot, `app.py` lifespan queries DB for `status='active'` sessions and restarts them.
 - **SimulationAdapter clips orders** — if buy exceeds available cash, quantity is reduced to max affordable (no rejection).
-- **`_run_with_restart`** — each session component auto-retries up to 3 times with 5s delay; sets session status to `error` on exhaust.
+- **`_run_with_restart`** — accepts a lambda factory (not a coroutine object!) so each retry creates a fresh coroutine. Auto-retries up to 3 times with 5s delay; sets session status to `error` on exhaust.
+- **Market ticks in V2** — `on_scrape_complete` callback publishes `MarketTick` to `session:{id}:market:ticks` after each data scrape. This feeds SimulationAdapter and PortfolioTracker with prices.
+- **Portfolio state includes `positions` list** — `_publish_state_loop` publishes `positions: [{symbol, quantity, avg_entry_price}]` for rebalancer consumption.
 - **Legacy scripts** (`run_data.py`, `run_strategy.py`, `run_execution.py`) still exist but are unused — `run_monitor.py` is the sole entry point.
 - **Backtesting is lightweight** — pure in-memory (no DB, no Redis), uses same rolling buffer format as live.
 
