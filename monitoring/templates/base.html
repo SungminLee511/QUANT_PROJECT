@@ -47,11 +47,6 @@
         .sidebar-section { padding: 12px 16px 8px; }
         .sidebar-section h3 { font-size: 11px; color: #484f58; text-transform: uppercase; letter-spacing: 0.5px; }
 
-        /* Global view link */
-        .session-item.global { border-left-color: transparent; }
-        .session-item.global.active { border-left-color: #d29922; }
-        .session-item.global .s-name { color: #d29922; }
-
         /* ── Main content ────────────────────────────────── */
         .main { flex: 1; margin-left: 260px; min-height: calc(100vh - 52px); }
 
@@ -94,11 +89,13 @@
     <div class="nav">
         <div class="nav-left">
             <h1>Quant Trader</h1>
+            {% set sid = selected_session or (sessions[0].id if sessions else '') %}
             <div class="nav-links">
-                <a href="/" class="{% if active_page == 'dashboard' %}active{% endif %}">Dashboard</a>
-                <a href="/editor" class="{% if active_page == 'editor' %}active{% endif %}">Strategy Editor</a>
-                <a href="/backtest" class="{% if active_page == 'backtest' %}active{% endif %}">Backtest</a>
-                <a href="/logs" class="{% if active_page == 'logs' %}active{% endif %}">Logs</a>
+                <a href="/overview" class="{% if active_page == 'overview' %}active{% endif %}">Overview</a>
+                <a href="/?session_id={{ sid }}" class="{% if active_page == 'dashboard' %}active{% endif %}">Dashboard</a>
+                <a href="/editor?session_id={{ sid }}" class="{% if active_page == 'editor' %}active{% endif %}">Strategy Editor</a>
+                <a href="/backtest?session_id={{ sid }}" class="{% if active_page == 'backtest' %}active{% endif %}">Backtest</a>
+                <a href="/logs?session_id={{ sid }}" class="{% if active_page == 'logs' %}active{% endif %}">Logs</a>
                 <a href="/settings" class="{% if active_page == 'settings' %}active{% endif %}">Settings</a>
             </div>
         </div>
@@ -114,12 +111,6 @@
             <div class="sidebar-header">
                 <h2>Sessions</h2>
                 <button class="add-btn" onclick="showCreateModal()" title="New session">+</button>
-            </div>
-
-            <div class="sidebar-section"><h3>Overview</h3></div>
-            <div class="session-item global {% if not selected_session %}active{% endif %}" onclick="selectSession(null)">
-                <div class="s-name">All Sessions</div>
-                <div class="s-meta">Global view</div>
             </div>
 
             <div class="sidebar-section"><h3>Active Sessions</h3></div>
@@ -246,34 +237,15 @@
 
         // ── Session selection ───────────────────────────────
         function selectSession(id) {
-            currentSessionId = id;
-            // Update URL without reload
-            const url = new URL(window.location);
-            if (id) {
-                url.searchParams.set('session_id', id);
-            } else {
-                url.searchParams.delete('session_id');
+            if (!id) {
+                window.location.href = '/overview';
+                return;
             }
-            window.history.pushState({}, '', url);
-
-            // Update sidebar active state
-            document.querySelectorAll('.session-item').forEach(el => el.classList.remove('active'));
-            document.querySelectorAll('.session-controls').forEach(el => el.classList.remove('show'));
-            if (id) {
-                const item = document.querySelector(`.session-item[data-id="${id}"]`);
-                if (item) {
-                    item.classList.add('active');
-                    const ctrl = document.getElementById(`controls-${id}`);
-                    if (ctrl) ctrl.classList.add('show');
-                }
-            } else {
-                document.querySelector('.session-item.global').classList.add('active');
-            }
-
-            // Notify page-specific handler
-            if (typeof onSessionChange === 'function') {
-                onSessionChange(id);
-            }
+            // Stay on the current page, just switch session
+            const path = window.location.pathname;
+            const sessionPages = ['/', '/editor', '/backtest', '/logs'];
+            const currentPage = sessionPages.includes(path) ? path : '/';
+            window.location.href = currentPage + '?session_id=' + id;
         }
 
         // ── Create modal ────────────────────────────────────

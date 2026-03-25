@@ -140,6 +140,7 @@ def create_backtest_router(
                     "code": info["strategy_code"],
                     "source": "session",
                     "symbols": info.get("symbols", []),
+                    "starting_budget": info.get("starting_budget", 10000),
                 })
 
         # Fallback to default strategy

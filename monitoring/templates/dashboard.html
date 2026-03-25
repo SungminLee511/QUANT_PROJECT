@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard — Quant Trader{% endblock %}
+{% block title %}{% if active_page == 'overview' %}Overview{% else %}Dashboard{% endif %} — Quant Trader{% endblock %}
 
 {% block head_extra %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -167,8 +167,11 @@ th { color: #8b949e; font-weight: 600; }
 
     // Called by base.html when session changes
     function onSessionChange(sessionId) {
-        updateBanner();
-        fetchData();
+        if (sessionId) {
+            window.location.href = '/?session_id=' + sessionId;
+        } else {
+            window.location.href = '/overview';
+        }
     }
 
     initChart(); updateBanner(); fetchData(); setInterval(fetchData, 10000);

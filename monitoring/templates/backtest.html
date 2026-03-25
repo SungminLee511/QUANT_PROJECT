@@ -221,9 +221,12 @@ async function loadStrategyCode() {
         const resp = await fetch(url);
         const data = await resp.json();
         editor.setValue(data.code || '');
-        // Pre-fill symbols from session if available
+        // Pre-fill symbols and budget from session if available
         if (data.symbols && data.symbols.length > 0) {
             document.getElementById('btSymbols').value = data.symbols.join(',');
+        }
+        if (data.starting_budget) {
+            document.getElementById('btCash').value = data.starting_budget;
         }
     } catch (e) {
         console.error('Failed to load strategy code:', e);

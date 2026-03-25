@@ -8,7 +8,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from monitoring.auth import get_current_user, require_auth
@@ -42,11 +42,28 @@ def create_dashboard_router(
 
     # ── Pages ────────────────────────────────────────────────────────
 
+    @router.get("/overview")
+    async def overview(request: Request):
+        redirect = require_auth(request)
+        if redirect:
+            return redirect
+        sessions = await session_manager.get_all_sessions()
+        for s in sessions:
+            s["is_running"] = session_manager.is_running(s["id"])
+        return templates.TemplateResponse(request, "dashboard.html", {
+            "user": get_current_user(request),
+            "sessions": sessions,
+            "active_page": "overview",
+            "selected_session": None,
+        })
+
     @router.get("/")
     async def index(request: Request, session_id: Optional[str] = Query(None)):
         redirect = require_auth(request)
         if redirect:
             return redirect
+        if not session_id:
+            return RedirectResponse(url="/overview", status_code=302)
         # Fetch all sessions for the sidebar
         sessions = await session_manager.get_all_sessions()
         for s in sessions:

@@ -117,7 +117,7 @@ def create_app(config: dict) -> FastAPI:
     async def login_page(request: Request):
         user = get_current_user(request)
         if user:
-            return RedirectResponse(url="/", status_code=302)
+            return RedirectResponse(url="/overview", status_code=302)
         return templates.TemplateResponse(request, "login.html", {
             "error": None,
         })
@@ -129,7 +129,7 @@ def create_app(config: dict) -> FastAPI:
         password = form.get("password", "")
 
         if check_credentials(username, password, config):
-            response = RedirectResponse(url="/", status_code=302)
+            response = RedirectResponse(url="/overview", status_code=302)
             ttl = config.get("auth", {}).get("session_ttl_hours", 24)
             create_session(response, username, ttl)
             logger.info("User '%s' logged in", username)
