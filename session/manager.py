@@ -1,34 +1,61 @@
-"""Session manager — orchestrates per-session trading pipelines.
+"""Session manager — orchestrates per-session trading pipelines (V2).
 
-Each session runs its own set of asyncio tasks:
-  data feed -> strategy engine -> risk manager -> order router -> portfolio tracker
+Each session runs:
+  DataCollector -> StrategyExecutor -> WeightRebalancer -> OrderRouter -> PortfolioTracker
 
 All isolated by session_id via Redis channel namespacing and DB foreign keys.
 """
 
 import asyncio
+import copy
 import json
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
+
+import numpy as np
 
 from db.models import TradingSession
 from db.session import get_session
 from shared.enums import Exchange, SessionType
 from shared.redis_client import RedisClient, session_channel
 from shared.schemas import LogEntry
-from strategy.base import BaseStrategy
-from strategy.engine import StrategyEngine
-from risk.manager import RiskManager
-from risk.kill_switch import KillSwitch
+
+from data.collector import DataCollector
+from strategy.executor import StrategyExecutor
+from strategy.rebalancer import WeightRebalancer
 from execution.router import OrderRouter
 from execution.sim_adapter import SimulationAdapter
 from portfolio.tracker import PortfolioTracker
+from risk.kill_switch import KillSwitch
 
 logger = logging.getLogger(__name__)
 
 # Max retries for a crashed session pipeline
 MAX_RESTART_ATTEMPTS = 3
 RESTART_DELAY = 5  # seconds
+
+# Default data config for new sessions
+DEFAULT_DATA_CONFIG = {
+    "resolution": "1min",
+    "exec_every_n": 1,
+    "fields": {
+        "price": {"enabled": True, "lookback": 20},
+        "volume": {"enabled": True, "lookback": 10},
+        "open": {"enabled": False, "lookback": 0},
+        "high": {"enabled": False, "lookback": 0},
+        "low": {"enabled": False, "lookback": 0},
+        "vwap": {"enabled": False, "lookback": 0},
+        "bid": {"enabled": False, "lookback": 0},
+        "ask": {"enabled": False, "lookback": 0},
+        "spread": {"enabled": False, "lookback": 0},
+        "num_trades": {"enabled": False, "lookback": 0},
+    },
+    "custom_data": [],
+    "custom_global_data": [],
+}
+
+DEFAULT_STRATEGY_PATH = Path(__file__).resolve().parent.parent / "strategy" / "examples" / "momentum_v2.py"
 
 
 class SessionPipeline:
@@ -38,9 +65,9 @@ class SessionPipeline:
         self.session_id = session_id
         self.session_type = session_type
         self.tasks: list[asyncio.Task] = []
-        self.feed = None
-        self.strategy_engine: StrategyEngine | None = None
-        self.risk_manager: RiskManager | None = None
+        self.collector: DataCollector | None = None
+        self.executor: StrategyExecutor | None = None
+        self.rebalancer: WeightRebalancer | None = None
         self.order_router: OrderRouter | None = None
         self.portfolio_tracker: PortfolioTracker | None = None
         self.sim_adapter: SimulationAdapter | None = None
@@ -76,6 +103,11 @@ class SessionManager:
             "testnet": testnet,
         }
 
+        # Default strategy code
+        default_code = ""
+        if DEFAULT_STRATEGY_PATH.exists():
+            default_code = DEFAULT_STRATEGY_PATH.read_text()
+
         async with get_session() as db:
             ts = TradingSession(
                 name=name,
@@ -84,6 +116,9 @@ class SessionManager:
                 config_json=json.dumps(config_data),
                 starting_budget=starting_budget if is_sim else None,
                 status="stopped",
+                strategy_code=default_code,
+                data_config=json.dumps(DEFAULT_DATA_CONFIG),
+                custom_data_code=json.dumps([]),
             )
             db.add(ts)
             await db.flush()
@@ -94,7 +129,6 @@ class SessionManager:
 
     async def delete_session(self, session_id: str) -> bool:
         """Stop and remove a session."""
-        # Stop first if running
         if session_id in self._pipelines:
             await self.stop_session(session_id)
 
@@ -102,7 +136,6 @@ class SessionManager:
             from sqlalchemy import select, delete as sa_delete
             from db.models import Trade, Position, Order, EquitySnapshot, AlertLog
 
-            # Delete dependent records first
             for model in [Trade, Position, Order, EquitySnapshot, AlertLog]:
                 await db.execute(
                     sa_delete(model).where(model.session_id == session_id)
@@ -186,13 +219,18 @@ class SessionManager:
         config_data = info.get("config", {})
         symbols = config_data.get("symbols", ["BTCUSDT"])
         starting_budget = info.get("starting_budget") or self._config.get("sessions", {}).get("default_sim_budget", 10000.0)
+        strategy_code = info.get("strategy_code", "")
+        data_config = info.get("data_config") or DEFAULT_DATA_CONFIG
+        custom_data_code = info.get("custom_data_code") or []
 
         pipeline = SessionPipeline(session_id, session_type)
         self._pipelines[session_id] = pipeline
 
         try:
-            await self._start_pipeline(pipeline, config_data, symbols, starting_budget)
-            # Update DB status
+            await self._start_pipeline(
+                pipeline, config_data, symbols, starting_budget,
+                strategy_code, data_config, custom_data_code,
+            )
             await self._set_session_status(session_id, "active")
             await self._publish_log(
                 session_id, "session_event",
@@ -215,6 +253,13 @@ class SessionManager:
 
         pipeline.running = False
 
+        # Stop collector
+        if pipeline.collector:
+            try:
+                await pipeline.collector.stop()
+            except Exception:
+                pass
+
         # Cancel all tasks
         for task in pipeline.tasks:
             task.cancel()
@@ -222,13 +267,6 @@ class SessionManager:
             try:
                 await task
             except (asyncio.CancelledError, Exception):
-                pass
-
-        # Disconnect feed
-        if pipeline.feed:
-            try:
-                await pipeline.feed.disconnect()
-            except Exception:
                 pass
 
         del self._pipelines[session_id]
@@ -246,7 +284,7 @@ class SessionManager:
         pipeline = self._pipelines.get(session_id)
         return pipeline is not None and pipeline.running
 
-    # ── Pipeline construction ────────────────────────────────────────
+    # ── Pipeline construction (V2) ────────────────────────────────────
 
     async def _start_pipeline(
         self,
@@ -254,28 +292,29 @@ class SessionManager:
         config_data: dict,
         symbols: list[str],
         starting_budget: float,
+        strategy_code: str,
+        data_config: dict,
+        custom_data_code: list[dict],
     ) -> None:
-        """Build and start all components for a session."""
+        """Build and start all V2 components for a session."""
         sid = pipeline.session_id
         st = pipeline.session_type
         exchange = st.exchange
 
-        # Build per-session config (channel overrides)
+        # Build per-session config (for OrderRouter/PortfolioTracker)
         session_config = self._build_session_config(sid, config_data, symbols)
 
-        # 1. Data feed
-        feed = self._create_feed(pipeline, symbols)
-        pipeline.feed = feed
+        # 1. Strategy Executor
+        executor = StrategyExecutor(sid, symbols)
+        if strategy_code:
+            executor.load_strategy(strategy_code)
+        pipeline.executor = executor
 
-        # 2. Strategy engine (session-aware)
-        engine = StrategyEngine(session_config, self._redis)
-        pipeline.strategy_engine = engine
+        # 2. Weight Rebalancer
+        rebalancer = WeightRebalancer(sid, symbols, exchange)
+        pipeline.rebalancer = rebalancer
 
-        # 3. Risk manager (session-aware)
-        risk_mgr = RiskManager(session_config, self._redis, session_id=sid)
-        pipeline.risk_manager = risk_mgr
-
-        # 4. Order router — sim or real
+        # 3. Order Router — sim or real
         if st.is_simulation:
             sim_adapter = SimulationAdapter(
                 session_id=sid,
@@ -289,25 +328,35 @@ class SessionManager:
             router = OrderRouter(session_config, self._redis, session_id=sid)
         pipeline.order_router = router
 
-        # 5. Portfolio tracker (session-aware)
+        # 4. Portfolio Tracker
         tracker = PortfolioTracker(session_config, self._redis, session_id=sid, starting_cash=starting_budget)
         pipeline.portfolio_tracker = tracker
 
+        # 5. DataCollector — with strategy trigger callback
+        async def on_strategy_trigger(data_snapshot: dict):
+            """Called by DataCollector every N scrapes."""
+            await self._run_strategy_cycle(pipeline, data_snapshot, starting_budget)
+
+        collector = DataCollector(
+            session_id=sid,
+            symbols=symbols,
+            data_config=data_config,
+            exchange=exchange,
+            on_strategy_trigger=on_strategy_trigger,
+        )
+
+        # Load custom data functions
+        if custom_data_code:
+            collector.load_custom_data_functions(custom_data_code)
+
+        pipeline.collector = collector
         pipeline.running = True
 
-        # Start everything as tasks with auto-restart
+        # Start tasks
         pipeline.tasks = [
             asyncio.create_task(
-                self._run_with_restart(sid, "feed", self._run_feed(feed)),
-                name=f"session_{sid}_feed",
-            ),
-            asyncio.create_task(
-                self._run_with_restart(sid, "strategy", engine.start()),
-                name=f"session_{sid}_strategy",
-            ),
-            asyncio.create_task(
-                self._run_with_restart(sid, "risk", risk_mgr.start()),
-                name=f"session_{sid}_risk",
+                self._run_with_restart(sid, "collector", collector.start()),
+                name=f"session_{sid}_collector",
             ),
             asyncio.create_task(
                 self._run_with_restart(sid, "router", router.start()),
@@ -327,52 +376,80 @@ class SessionManager:
                 )
             )
 
-    def _create_feed(self, pipeline: SessionPipeline, symbols: list[str]):
-        """Create the appropriate data feed for the session type."""
-        st = pipeline.session_type
+    async def _run_strategy_cycle(
+        self,
+        pipeline: SessionPipeline,
+        data_snapshot: dict,
+        starting_budget: float,
+    ) -> None:
+        """Execute one strategy cycle: main() -> normalize -> rebalance -> orders."""
         sid = pipeline.session_id
 
-        if st == SessionType.BINANCE_SIM:
-            from data.binance_sim_feed import BinanceSimFeed
-            return BinanceSimFeed(sid, symbols, self._redis)
-        elif st == SessionType.ALPACA_SIM:
-            from data.yfinance_feed import YFinanceFeed
-            poll_interval = self._config.get("sessions", {}).get("yfinance_poll_interval_sec", 2)
-            return YFinanceFeed(sid, symbols, self._redis, poll_interval=poll_interval)
-        elif st == SessionType.BINANCE:
-            from data.binance_feed import BinanceFeed
-            # Build config with session-specific API keys
-            session_cfg = json.loads(pipeline.__dict__.get("_config_json", "{}")) if hasattr(pipeline, "_config_json") else {}
-            # Use the session-aware BinanceFeed (will be refactored later)
-            from data.binance_sim_feed import BinanceSimFeed
-            # For real Binance, use same feed structure (public WS for data)
-            return BinanceSimFeed(sid, symbols, self._redis)
-        elif st == SessionType.ALPACA:
-            from data.yfinance_feed import YFinanceFeed
-            # For real Alpaca, data still comes from yfinance (Alpaca data needs keys)
-            poll_interval = self._config.get("sessions", {}).get("yfinance_poll_interval_sec", 2)
-            return YFinanceFeed(sid, symbols, self._redis, poll_interval=poll_interval)
-        else:
-            raise ValueError(f"Unknown session type: {st}")
+        if not pipeline.executor or not pipeline.rebalancer:
+            return
 
-    async def _run_feed(self, feed) -> None:
-        """Connect and subscribe a feed."""
-        await feed.connect()
-        await feed.subscribe()
-        # Keep alive — some feeds block here, others don't
-        if hasattr(feed, "run"):
-            await feed.run()
-        else:
-            while True:
-                await asyncio.sleep(1)
+        try:
+            # Check kill switch
+            ks_key = session_channel(sid, "risk:kill_switch")
+            kill_switch = KillSwitch(self._redis, ks_key)
+            if await kill_switch.is_active():
+                logger.debug("Session %s: kill switch active, skipping strategy", sid)
+                return
+
+            # 1. Run strategy
+            weights = pipeline.executor.execute(data_snapshot)
+
+            await self._publish_log(
+                sid, "strategy_eval",
+                f"Strategy returned weights: {weights.tolist()}",
+                metadata={"weights": weights.tolist()},
+            )
+
+            # 2. Get current state for rebalancing
+            prices = pipeline.collector.get_current_prices() if pipeline.collector else None
+            if prices is None:
+                logger.debug("Session %s: no current prices, skipping rebalance", sid)
+                return
+
+            # Get current positions from portfolio tracker state
+            portfolio_key = session_channel(sid, "portfolio:state")
+            state = await self._redis.get_flag(portfolio_key)
+
+            current_positions = {}
+            total_equity = starting_budget
+            if state:
+                total_equity = state.get("total_equity", starting_budget)
+                for pos in state.get("positions", []):
+                    current_positions[pos["symbol"]] = pos.get("quantity", 0)
+
+            # 3. Generate rebalancing orders
+            orders = pipeline.rebalancer.rebalance(
+                target_weights=weights,
+                current_positions=current_positions,
+                total_equity=total_equity,
+                current_prices=prices,
+            )
+
+            # 4. Submit orders via Redis
+            if orders:
+                orders_channel = session_channel(sid, "execution:orders")
+                for order in orders:
+                    await self._redis.publish(orders_channel, order)
+                    await self._publish_log(
+                        sid, "order_submit",
+                        f"Order: {order.side.value} {order.quantity:.6f} {order.symbol}",
+                        symbol=order.symbol,
+                        metadata={"side": order.side.value, "quantity": order.quantity},
+                    )
+
+        except Exception:
+            logger.exception("Session %s: strategy cycle error", sid)
+            await self._publish_log(sid, "strategy_error", "Strategy cycle failed", level="error")
 
     def _build_session_config(self, session_id: str, config_data: dict, symbols: list[str]) -> dict:
         """Build a per-session config dict with namespaced Redis channels."""
-        # Start with a copy of the global config
-        import copy
         cfg = copy.deepcopy(self._config)
 
-        # Override channels with session-namespaced versions
         cfg.setdefault("redis", {}).setdefault("channels", {})
         cfg["redis"]["channels"] = {
             "market_data": session_channel(session_id, "market:ticks"),
@@ -383,11 +460,9 @@ class SessionManager:
             "logs": session_channel(session_id, "logs"),
         }
 
-        # Override risk keys
         cfg.setdefault("risk", {})["kill_switch_key"] = session_channel(session_id, "risk:kill_switch")
         cfg["risk"]["portfolio_state_key"] = session_channel(session_id, "portfolio:state")
 
-        # Set session-specific exchange config
         if config_data.get("api_key"):
             exchange_key = "binance" if "binance" in config_data.get("type", "") else "alpaca"
             cfg.setdefault(exchange_key, {}).update({
@@ -403,7 +478,7 @@ class SessionManager:
         for attempt in range(1, MAX_RESTART_ATTEMPTS + 1):
             try:
                 await coro
-                return  # Clean exit
+                return
             except asyncio.CancelledError:
                 return
             except Exception:
@@ -468,6 +543,23 @@ class SessionManager:
     def _session_to_dict(ts: TradingSession) -> dict:
         """Convert a TradingSession ORM object to a dict."""
         config_data = json.loads(ts.config_json or "{}")
+
+        # Parse data_config
+        data_config = None
+        if ts.data_config:
+            try:
+                data_config = json.loads(ts.data_config)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        # Parse custom_data_code
+        custom_data_code = []
+        if ts.custom_data_code:
+            try:
+                custom_data_code = json.loads(ts.custom_data_code)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
         return {
             "id": ts.id,
             "name": ts.name,
@@ -478,6 +570,8 @@ class SessionManager:
             "symbols": config_data.get("symbols", []),
             "strategy_class": ts.strategy_class,
             "strategy_code": ts.strategy_code or "",
+            "data_config": data_config,
+            "custom_data_code": custom_data_code,
             "config": config_data,
             "created_at": ts.created_at.isoformat() if ts.created_at else "",
         }
