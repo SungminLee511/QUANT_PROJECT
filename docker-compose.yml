@@ -29,6 +29,49 @@ services:
       timeout: 5s
       retries: 5
 
+  # BUG 1 fix: Run Alembic migrations before app starts.
+  # Ensures schema exists even after volume wipe or first boot.
+  db-init:
+    build: .
+    command: >
+      bash -c "
+        echo 'Waiting for database to be fully ready...' &&
+        python -c \"
+import time, sys
+for i in range(30):
+    try:
+        import asyncpg, asyncio
+        async def check():
+            conn = await asyncpg.connect(
+                host='postgres', port=5432,
+                user='quant', password='$${QT_DB_PASSWORD:-changeme}',
+                database='quant_trader'
+            )
+            await conn.close()
+        asyncio.run(check())
+        print('Database is ready')
+        break
+    except Exception as e:
+        print(f'Attempt {i+1}/30: {e}')
+        time.sleep(2)
+else:
+    print('Database not ready after 60s')
+    sys.exit(1)
+        \" &&
+        echo 'Running Alembic migrations...' &&
+        alembic upgrade head &&
+        echo 'Database initialization complete'
+      "
+    env_file: .env
+    environment:
+      QT_ENV: prod
+      QT_REDIS_HOST: redis
+      QT_DATABASE_HOST: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   # Unified engine + web UI. SessionManager orchestrates all trading pipelines
   # (data feed, strategy, risk, execution, portfolio) per session as asyncio tasks.
   # Previously active sessions are auto-restarted on startup.
@@ -45,8 +88,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      postgres:
-        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
 volumes:

@@ -422,6 +422,23 @@ Auto-activates kill switch on drawdown or daily loss breach.
 
 ---
 
+## Bug Fix Guide
+
+See **[BUG_FIX_GUIDE.md](BUG_FIX_GUIDE.md)** for known bugs, root causes, and step-by-step fixes. Key issues documented:
+
+| Bug | Severity | Summary |
+|-----|----------|---------|
+| BUG 1: No DB schema init on startup | **CRITICAL** | `pg_isready` ≠ tables exist. No Alembic migration step → all services crash after restart. Fix: `db-init` service in docker-compose. |
+| BUG 2: TimescaleDB extension never created | **CRITICAL** | `CREATE EXTENSION timescaledb` never runs → `create_hypertable()` fails. Fix: `db/init.sql` mounted via `docker-entrypoint-initdb.d`. |
+| BUG 3: Services don't depend on Postgres | **HIGH** | `data-feed` and `strategy` have no Postgres dependency → DB writes crash. Fix: resolved transitively by BUG 1's `db-init` dependency. |
+| BUG 4: `latest` tag on TimescaleDB image | **HIGH** | Silent upgrades can break on-disk format → volume incompatible. Fix: pin to specific version (e.g. `2.17.2-pg16`). |
+| BUG 5: Missing psycopg2 sync driver | **MEDIUM** | Alembic needs sync driver but only `asyncpg` installed → `alembic upgrade head` fails. Fix: add `psycopg2-binary` to requirements. |
+| BUG 6: No Redis persistence config | **MEDIUM** | No AOF enabled → lose cached state on unclean shutdown. Fix: `redis-server --appendonly yes`. |
+| BUG 7: Alembic hardcoded connection string | **MEDIUM** | `localhost` in alembic.ini fails inside Docker (host is `postgres`). Fix: override URL from env vars in `env.py`. |
+| BUG 8: No graceful shutdown handling | **LOW** | No SIGTERM handler → incomplete transactions, orphaned connections. Fix: register signal handlers in entry points. |
+
+---
+
 ## Gotchas & Notes
 
 - **Never commit `.env`** — it's gitignored. Use `.env.example` as template.
