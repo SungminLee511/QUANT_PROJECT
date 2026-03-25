@@ -19,7 +19,7 @@ from db.models import TradingSession
 from db.session import get_session
 from shared.enums import Exchange, SessionType
 from shared.redis_client import RedisClient, session_channel
-from shared.schemas import LogEntry
+from shared.schemas import LogEntry, MarketTick
 
 from data.collector import DataCollector
 from strategy.executor import StrategyExecutor
@@ -330,7 +330,23 @@ class SessionManager:
             await self._run_strategy_cycle(pipeline, data_snapshot, starting_budget)
 
         async def on_scrape_complete(scrape_count: int, min_fill: int, max_needed: int):
-            """Called after each data scrape — publish status to logs."""
+            """Called after each data scrape — publish prices + status to logs."""
+            # Publish current prices as MarketTick to feed SimAdapter + PortfolioTracker
+            if pipeline.collector:
+                current_prices = pipeline.collector.get_current_prices()
+                if current_prices is not None:
+                    market_channel = session_channel(sid, "market:ticks")
+                    for i, symbol in enumerate(symbols):
+                        tick = MarketTick(
+                            symbol=symbol,
+                            price=float(current_prices[i]),
+                            volume=0.0,
+                            exchange=exchange,
+                            session_id=sid,
+                            source="collector",
+                        )
+                        await self._redis.publish(market_channel, tick)
+
             if min_fill < max_needed:
                 await self._publish_log(
                     sid, "data_scrape",
