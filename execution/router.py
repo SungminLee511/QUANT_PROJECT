@@ -116,6 +116,15 @@ class OrderRouter:
             except Exception:
                 logger.exception("Failed to place order %s (session=%s)", order_id, self._session_id)
                 order.transition(OrderStatus.FAILED)
+                # Persist the failed order so it's visible in the DB/dashboard
+                self._open_orders[order_id] = order
+                await self._persist_order(order)
+                await self._publish_log(
+                    "order_failed", request.symbol,
+                    f"FAILED {request.side.value.upper()} {request.symbol} qty={request.quantity:.6f}",
+                    level="error",
+                    metadata={"side": request.side.value, "quantity": request.quantity, "order_id": order_id},
+                )
                 return
 
             # Track and persist
