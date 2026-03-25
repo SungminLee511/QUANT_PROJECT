@@ -41,16 +41,7 @@ DEFAULT_DATA_CONFIG = {
     "resolution": "1min",
     "exec_every_n": 1,
     "fields": {
-        "price": {"enabled": True, "lookback": 20},
-        "volume": {"enabled": True, "lookback": 10},
-        "open": {"enabled": False, "lookback": 0},
-        "high": {"enabled": False, "lookback": 0},
-        "low": {"enabled": False, "lookback": 0},
-        "vwap": {"enabled": False, "lookback": 0},
-        "bid": {"enabled": False, "lookback": 0},
-        "ask": {"enabled": False, "lookback": 0},
-        "spread": {"enabled": False, "lookback": 0},
-        "num_trades": {"enabled": False, "lookback": 0},
+        "price": {"enabled": True, "lookback": 20, "source": "yfinance"},
     },
     "custom_data": [],
     "custom_global_data": [],
@@ -338,12 +329,41 @@ class SessionManager:
             """Called by DataCollector every N scrapes."""
             await self._run_strategy_cycle(pipeline, data_snapshot, starting_budget)
 
+        async def on_scrape_complete(scrape_count: int, min_fill: int, max_needed: int):
+            """Called after each data scrape — publish status to logs."""
+            if min_fill < max_needed:
+                await self._publish_log(
+                    sid, "data_scrape",
+                    f"Scrape #{scrape_count} — filling buffers ({min_fill}/{max_needed})",
+                    metadata={"scrape": scrape_count, "fill": min_fill, "needed": max_needed},
+                )
+            else:
+                await self._publish_log(
+                    sid, "data_scrape",
+                    f"Scrape #{scrape_count} — data collected",
+                    metadata={"scrape": scrape_count, "fill": min_fill},
+                )
+
+        # Build Alpaca credentials — try session-level keys first, then global config
+        alpaca_creds = {}
+        session_api_key = config_data.get("api_key", "")
+        session_api_secret = config_data.get("api_secret", "")
+        if session_api_key:
+            alpaca_creds = {"api_key": session_api_key, "api_secret": session_api_secret}
+        else:
+            # Fall back to global config
+            alpaca_cfg = self._config.get("alpaca", {})
+            if alpaca_cfg.get("api_key"):
+                alpaca_creds = {"api_key": alpaca_cfg["api_key"], "api_secret": alpaca_cfg.get("api_secret", "")}
+
         collector = DataCollector(
             session_id=sid,
             symbols=symbols,
             data_config=data_config,
             exchange=exchange,
             on_strategy_trigger=on_strategy_trigger,
+            on_scrape_complete=on_scrape_complete,
+            alpaca_credentials=alpaca_creds,
         )
 
         # Load custom data functions

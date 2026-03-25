@@ -365,12 +365,27 @@
             } catch(e) { showToast('Error: ' + e.message, false); }
         }
 
+        // ── Show controls for active session ─────────────────
+        function showControlsForSession(id) {
+            // Hide all controls first
+            document.querySelectorAll('.session-controls').forEach(c => c.classList.remove('show'));
+            // Show controls for selected session
+            if (id) {
+                const ctrl = document.getElementById('controls-' + id);
+                if (ctrl) ctrl.classList.add('show');
+            }
+        }
+
         // ── Init: read session_id from URL ──────────────────
         (function() {
             const params = new URLSearchParams(window.location.search);
             const sid = params.get('session_id');
             if (sid && sid !== currentSessionId) {
                 selectSession(sid);
+            }
+            // Show controls for active session on page load
+            if (currentSessionId) {
+                showControlsForSession(currentSessionId);
             }
         })();
     </script>

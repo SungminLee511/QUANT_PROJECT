@@ -1,0 +1,344 @@
+{% extends "base.html" %}
+
+{% block title %}Overview — Quant Trader{% endblock %}
+
+{% block extra_styles %}
+.overview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 16px;
+    padding: 20px 24px;
+}
+
+.overview-header {
+    padding: 20px 24px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.overview-header h2 {
+    font-size: 16px;
+    font-weight: 600;
+}
+.overview-header .count {
+    font-size: 13px;
+    color: #8b949e;
+}
+
+/* Session card */
+.sess-card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    transition: border-color 0.15s;
+}
+.sess-card:hover {
+    border-color: #484f58;
+}
+
+/* Card header row */
+.sess-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+.sess-card-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: #e1e4e8;
+    word-break: break-word;
+}
+.sess-card-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #8b949e;
+    flex-shrink: 0;
+}
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+.status-dot.running { background: #3fb950; }
+.status-dot.stopped { background: #484f58; }
+.status-dot.error   { background: #f85149; }
+
+/* Type badge */
+.type-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+.type-badge.sim {
+    color: #d29922;
+    background: rgba(210, 153, 34, 0.12);
+    border: 1px solid rgba(210, 153, 34, 0.25);
+}
+.type-badge.live {
+    color: #f85149;
+    background: rgba(248, 81, 73, 0.12);
+    border: 1px solid rgba(248, 81, 73, 0.25);
+}
+.exchange-tag {
+    font-size: 11px;
+    color: #8b949e;
+    margin-left: 6px;
+}
+
+/* Metrics row */
+.sess-metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+}
+.sess-metric {
+    background: #0d1117;
+    border-radius: 6px;
+    padding: 10px 12px;
+}
+.sess-metric-label {
+    font-size: 10px;
+    color: #484f58;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-bottom: 4px;
+}
+.sess-metric-value {
+    font-size: 16px;
+    font-weight: 700;
+    color: #e1e4e8;
+}
+.sess-metric-value.positive { color: #3fb950; }
+.sess-metric-value.negative { color: #f85149; }
+.sess-metric-value.neutral  { color: #8b949e; }
+
+/* Symbols row */
+.sess-symbols {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+.sym-tag {
+    background: #21262d;
+    color: #8b949e;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: monospace;
+}
+.sym-more {
+    color: #484f58;
+    font-size: 11px;
+    padding: 2px 4px;
+}
+
+/* Card actions */
+.sess-card-actions {
+    display: flex;
+    gap: 8px;
+    padding-top: 4px;
+    border-top: 1px solid #21262d;
+}
+.card-btn {
+    padding: 6px 14px;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    background: #21262d;
+    color: #8b949e;
+    transition: background 0.15s, color 0.15s;
+}
+.card-btn:hover {
+    background: #30363d;
+    color: #e1e4e8;
+}
+.card-btn.start {
+    color: #3fb950;
+    border-color: rgba(35, 134, 54, 0.35);
+}
+.card-btn.start:hover {
+    background: rgba(35, 134, 54, 0.2);
+}
+.card-btn.stop {
+    color: #f85149;
+    border-color: rgba(218, 54, 51, 0.35);
+}
+.card-btn.stop:hover {
+    background: rgba(218, 54, 51, 0.2);
+}
+
+/* Empty state */
+.overview-empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 60px 20px;
+    color: #484f58;
+}
+.overview-empty h3 {
+    font-size: 18px;
+    color: #8b949e;
+    margin-bottom: 8px;
+}
+.overview-empty p {
+    font-size: 14px;
+}
+
+/* Refresh note */
+.refresh-note {
+    text-align: center;
+    color: #484f58;
+    font-size: 11px;
+    padding: 12px;
+}
+
+/* Loading shimmer on metric values while fetching */
+.sess-metric-value.loading {
+    color: #30363d;
+}
+{% endblock %}
+
+{% block content %}
+<div class="overview-header">
+    <h2>All Sessions</h2>
+    <span class="count" id="sessionCount">{{ sessions | length }} session{{ 's' if sessions | length != 1 else '' }}</span>
+</div>
+
+<div class="overview-grid" id="overviewGrid">
+    {% if sessions %}
+        {% for s in sessions %}
+        <div class="sess-card" data-session-id="{{ s.id }}">
+            <div class="sess-card-header">
+                <div>
+                    <div class="sess-card-name">{{ s.name }}</div>
+                    <div style="margin-top: 6px;">
+                        {% if s.is_simulation %}
+                        <span class="type-badge sim">SIM</span>
+                        {% else %}
+                        <span class="type-badge live">LIVE</span>
+                        {% endif %}
+                        <span class="exchange-tag">
+                            {% if 'binance' in s.session_type %}Binance{% elif 'alpaca' in s.session_type %}Alpaca{% else %}{{ s.session_type }}{% endif %}
+                        </span>
+                    </div>
+                </div>
+                <div class="sess-card-status">
+                    <span class="status-dot {% if s.is_running %}running{% elif s.status == 'error' %}error{% else %}stopped{% endif %}"></span>
+                    {{ s.status | capitalize }}
+                </div>
+            </div>
+
+            <div class="sess-symbols">
+                {% for sym in s.symbols[:6] %}
+                <span class="sym-tag">{{ sym }}</span>
+                {% endfor %}
+                {% if s.symbols | length > 6 %}
+                <span class="sym-more">+{{ s.symbols | length - 6 }} more</span>
+                {% endif %}
+                {% if not s.symbols %}
+                <span class="sym-tag" style="color:#484f58;">No symbols</span>
+                {% endif %}
+            </div>
+
+            <div class="sess-metrics">
+                <div class="sess-metric">
+                    <div class="sess-metric-label">Budget</div>
+                    <div class="sess-metric-value">${{ '{:,.0f}'.format(s.starting_budget or 0) }}</div>
+                </div>
+                <div class="sess-metric">
+                    <div class="sess-metric-label">Equity</div>
+                    <div class="sess-metric-value loading" id="equity-{{ s.id }}">—</div>
+                </div>
+                <div class="sess-metric">
+                    <div class="sess-metric-label">Daily P&amp;L</div>
+                    <div class="sess-metric-value loading" id="pnl-{{ s.id }}">—</div>
+                </div>
+            </div>
+
+            <div class="sess-card-actions">
+                {% if s.is_running %}
+                <button class="card-btn stop" onclick="stopSession('{{ s.id }}')" id="action-{{ s.id }}">Stop</button>
+                {% else %}
+                <button class="card-btn start" onclick="startSession('{{ s.id }}')" id="action-{{ s.id }}">Start</button>
+                {% endif %}
+                <button class="card-btn" onclick="deleteSession('{{ s.id }}', '{{ s.name | e }}')">Delete</button>
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="overview-empty">
+            <h3>No sessions yet</h3>
+            <p>Click the <strong>+</strong> button in the sidebar to create your first trading session.</p>
+        </div>
+    {% endif %}
+</div>
+
+<div class="refresh-note">Auto-refreshes every 10 seconds</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Session IDs from server-rendered data
+    const sessionIds = {{ session_ids_json | safe }};
+
+    function fmt(n) {
+        return (n || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    }
+
+    async function fetchSessionMetrics() {
+        for (const sid of sessionIds) {
+            try {
+                const [pnlRes, posRes] = await Promise.all([
+                    fetch(`/api/pnl?session_id=${sid}`),
+                    fetch(`/api/positions?session_id=${sid}`),
+                ]);
+                const pnl = await pnlRes.json();
+                const pos = await posRes.json();
+
+                // Equity
+                const eqEl = document.getElementById(`equity-${sid}`);
+                if (eqEl) {
+                    const equity = pnl.total_equity || 0;
+                    if (equity > 0) {
+                        eqEl.textContent = '$' + fmt(equity);
+                        eqEl.className = 'sess-metric-value';
+                    } else {
+                        eqEl.textContent = '—';
+                        eqEl.className = 'sess-metric-value neutral';
+                    }
+                }
+
+                // Daily P&L
+                const pnlEl = document.getElementById(`pnl-${sid}`);
+                if (pnlEl) {
+                    const dp = pnl.daily_pnl || 0;
+                    if (dp === 0 && (pnl.total_equity || 0) === 0) {
+                        pnlEl.textContent = '—';
+                        pnlEl.className = 'sess-metric-value neutral';
+                    } else {
+                        pnlEl.textContent = (dp >= 0 ? '+$' : '-$') + fmt(Math.abs(dp));
+                        pnlEl.className = 'sess-metric-value ' + (dp > 0 ? 'positive' : dp < 0 ? 'negative' : 'neutral');
+                    }
+                }
+            } catch (e) {
+                console.error(`Failed to fetch metrics for session ${sid}:`, e);
+            }
+        }
+    }
+
+    // Initial fetch + periodic refresh
+    fetchSessionMetrics();
+    setInterval(fetchSessionMetrics, 10000);
+</script>
+{% endblock %}

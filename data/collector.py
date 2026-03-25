@@ -14,17 +14,12 @@ from typing import Callable, Optional
 import numpy as np
 
 from shared.enums import DataResolution, Exchange
+from data.sources import FIELD_MAP, DataSource, get_default_source
 
 logger = logging.getLogger(__name__)
 
-# Built-in data fields that can be collected
-BUILTIN_FIELDS = {
-    "price", "open", "high", "low", "volume", "vwap",
-    "bid", "ask", "spread", "num_trades",
-}
-
-# Fields only available for crypto (Binance)
-CRYPTO_ONLY_FIELDS = {"bid", "ask", "spread", "num_trades"}
+# Built-in data fields — all fields from the registry
+BUILTIN_FIELDS = set(FIELD_MAP.keys())
 
 
 class DataCollector:
@@ -37,6 +32,8 @@ class DataCollector:
         exchange: Exchange enum (BINANCE or ALPACA).
         on_strategy_trigger: Async callback called every exec_every_n scrapes
                              with the data snapshot dict.
+        on_scrape_complete: Async callback called after each scrape.
+        alpaca_credentials: Optional dict with api_key and api_secret for Alpaca.
     """
 
     def __init__(
@@ -46,29 +43,41 @@ class DataCollector:
         data_config: dict,
         exchange: Exchange,
         on_strategy_trigger: Optional[Callable] = None,
+        on_scrape_complete: Optional[Callable] = None,
+        alpaca_credentials: dict = None,
     ):
         self.session_id = session_id
         self.symbols = symbols
         self.n_symbols = len(symbols)
         self.exchange = exchange
         self.on_strategy_trigger = on_strategy_trigger
+        self.on_scrape_complete = on_scrape_complete
 
         # Parse config
         self.resolution = DataResolution(data_config.get("resolution", "1min"))
         self.exec_every_n = data_config.get("exec_every_n", 1)
 
-        # Parse fields and lookbacks
+        # Determine if this is a crypto session
+        self._is_crypto = (exchange == Exchange.BINANCE)
+
+        # Parse fields, lookbacks, and per-field source routing
         self.fields: dict[str, int] = {}  # field_name -> lookback
+        self._field_sources: dict[str, str] = {}  # field_name -> source name
         for field_name, field_cfg in data_config.get("fields", {}).items():
             if isinstance(field_cfg, dict):
                 if field_cfg.get("enabled") and field_cfg.get("lookback", 0) > 0:
                     self.fields[field_name] = field_cfg["lookback"]
+                    self._field_sources[field_name] = field_cfg.get(
+                        "source", get_default_source(field_name, self._is_crypto)
+                    )
             elif isinstance(field_cfg, int) and field_cfg > 0:
                 self.fields[field_name] = field_cfg
+                self._field_sources[field_name] = get_default_source(field_name, self._is_crypto)
 
         # Fallback: if no builtin fields enabled, default to price with lookback 20
         if not self.fields:
             self.fields["price"] = 20
+            self._field_sources["price"] = get_default_source("price", self._is_crypto)
 
         # Custom data configs
         self.custom_data = data_config.get("custom_data", [])
@@ -81,10 +90,42 @@ class DataCollector:
         self._buffer_fill: dict[str, int] = {}  # how many values have been written
         self._init_buffers()
 
+        # Lazily created source instances
+        self._source_instances: dict[str, object] = {}
+        self._alpaca_credentials = alpaca_credentials or {}
+        self._init_sources()
+
         # State
         self._scrape_count = 0
         self._running = False
         self._task: Optional[asyncio.Task] = None
+
+    def _init_sources(self) -> None:
+        """Initialize data source instances based on which sources are needed."""
+        needed_sources: set[str] = set()
+        for field_name in self.fields:
+            if field_name in BUILTIN_FIELDS:
+                needed_sources.add(self._field_sources.get(field_name, "yfinance"))
+
+        for source_name in needed_sources:
+            if source_name == DataSource.YFINANCE.value:
+                from data.sources.yfinance_source import YFinanceSource
+                self._source_instances[source_name] = YFinanceSource()
+            elif source_name == DataSource.ALPACA.value:
+                from data.sources.alpaca_source import AlpacaSource
+                api_key = self._alpaca_credentials.get("api_key", "")
+                api_secret = self._alpaca_credentials.get("api_secret", "")
+                source = AlpacaSource(api_key=api_key, api_secret=api_secret)
+                if not source.has_credentials:
+                    logger.warning(
+                        "Alpaca source requested but no credentials provided (session=%s). "
+                        "Alpaca fields will return empty data.",
+                        self.session_id,
+                    )
+                self._source_instances[source_name] = source
+            elif source_name == DataSource.BINANCE.value:
+                from data.sources.binance_source import BinanceSource
+                self._source_instances[source_name] = BinanceSource()
 
     def _init_buffers(self) -> None:
         """Initialize rolling buffers for all configured fields."""
@@ -147,17 +188,18 @@ class DataCollector:
                 logger.exception("Failed to load custom data function: %s", name)
 
     async def start(self) -> None:
-        """Start the data collection loop."""
+        """Start the data collection loop (blocks until stopped or cancelled)."""
         self._running = True
-        self._task = asyncio.create_task(
-            self._collection_loop(),
-            name=f"collector_{self.session_id}",
-        )
         logger.info(
             "DataCollector started (session=%s, resolution=%s, exec_every=%d, fields=%s)",
             self.session_id, self.resolution.value, self.exec_every_n,
             list(self.fields.keys()),
         )
+
+        # Pre-fill buffers with historical data so strategy can fire immediately
+        await self._backfill_buffers()
+
+        await self._collection_loop()
 
     async def stop(self) -> None:
         """Stop the data collection loop."""
@@ -170,6 +212,82 @@ class DataCollector:
                 pass
         logger.info("DataCollector stopped (session=%s)", self.session_id)
 
+    async def _backfill_buffers(self) -> None:
+        """Pre-fill rolling buffers with historical data from each source.
+
+        Runs fetch_history on each source in a thread executor (blocking I/O).
+        If backfill fails for any source/field, logs a warning and continues —
+        the live collection loop will fill buffers naturally as a fallback.
+        """
+        loop = asyncio.get_event_loop()
+
+        # Group builtin fields by source (same grouping as _collect_once)
+        source_fields: dict[str, set[str]] = {}
+        for field_name in self.fields:
+            if field_name in BUILTIN_FIELDS:
+                src = self._field_sources.get(field_name, "yfinance")
+                source_fields.setdefault(src, set()).add(field_name)
+
+        if not source_fields:
+            return
+
+        backfilled_count = 0
+        resolution_str = self.resolution.value
+
+        for source_name, field_set in source_fields.items():
+            fetcher = self._source_instances.get(source_name)
+            if fetcher is None:
+                continue
+
+            if not hasattr(fetcher, "fetch_history"):
+                logger.debug("Source '%s' has no fetch_history method, skipping backfill", source_name)
+                continue
+
+            # Determine the max lookback needed for this source's fields
+            max_lookback = max(self.fields[f] for f in field_set)
+
+            try:
+                history = await loop.run_in_executor(
+                    None,
+                    fetcher.fetch_history,
+                    self.symbols,
+                    field_set,
+                    resolution_str,
+                    max_lookback,
+                )
+
+                for fname, hist_arr in history.items():
+                    if fname not in self._buffers:
+                        continue
+
+                    lookback = self.fields[fname]
+                    buf = self._buffers[fname]
+
+                    # hist_arr shape: [N_symbols, max_lookback]
+                    # Take the last `lookback` columns
+                    if hist_arr.shape[1] >= lookback:
+                        buf[:, -lookback:] = hist_arr[:, -lookback:]
+                    else:
+                        # Partial fill: use whatever history is available
+                        avail = hist_arr.shape[1]
+                        buf[:, -avail:] = hist_arr
+
+                    filled = min(lookback, hist_arr.shape[1])
+                    self._buffer_fill[fname] = max(self._buffer_fill[fname], filled)
+                    backfilled_count += 1
+
+            except Exception:
+                logger.warning(
+                    "Backfill failed for source '%s' (session=%s) — "
+                    "live loop will fill buffers naturally",
+                    source_name, self.session_id, exc_info=True,
+                )
+
+        logger.info(
+            "Backfill complete: %d fields pre-filled (session=%s)",
+            backfilled_count, self.session_id,
+        )
+
     async def _collection_loop(self) -> None:
         """Main loop: collect data, append to buffers, trigger strategy."""
         interval = self.resolution.seconds
@@ -178,6 +296,12 @@ class DataCollector:
             try:
                 await self._collect_once()
                 self._scrape_count += 1
+
+                # Notify scrape complete (for logging to UI)
+                if self.on_scrape_complete:
+                    min_fill = min(self._buffer_fill.values()) if self._buffer_fill else 0
+                    max_needed = max(self.fields.values()) if self.fields else 1
+                    await self.on_scrape_complete(self._scrape_count, min_fill, max_needed)
 
                 # Trigger strategy every N scrapes
                 if (
@@ -202,14 +326,29 @@ class DataCollector:
         """Fetch all configured data fields and append to buffers."""
         loop = asyncio.get_event_loop()
 
-        # 1. Fetch built-in data
-        builtin_data = await loop.run_in_executor(
-            None, self._fetch_builtin_data
-        )
+        # 1. Group builtin fields by source
+        source_fields: dict[str, set[str]] = {}  # source_name -> set of field names
+        for field_name in self.fields:
+            if field_name in BUILTIN_FIELDS:
+                src = self._field_sources.get(field_name, "yfinance")
+                source_fields.setdefault(src, set()).add(field_name)
 
-        for field_name, values in builtin_data.items():
-            if field_name in self._buffers:
-                self._append_to_buffer(field_name, values)
+        # Fetch from each source
+        for source_name, field_set in source_fields.items():
+            fetcher = self._source_instances.get(source_name)
+            if fetcher is None:
+                continue
+            try:
+                data = await loop.run_in_executor(
+                    None, fetcher.fetch, self.symbols, field_set
+                )
+                for fname, values in data.items():
+                    if fname in self._buffers:
+                        self._append_to_buffer(fname, values)
+            except Exception:
+                logger.exception(
+                    "Source '%s' fetch error (session=%s)", source_name, self.session_id
+                )
 
         # 2. Fetch custom per-stock data
         for name, fn in self._custom_data_fns.items():
@@ -236,125 +375,6 @@ class DataCollector:
                 self._append_to_buffer(name, np.array([value]))
             except Exception:
                 logger.exception("Custom global data '%s' fetch error", name)
-
-    def _fetch_builtin_data(self) -> dict[str, np.ndarray]:
-        """Fetch built-in market data for all symbols. Runs in thread executor."""
-        if self.exchange == Exchange.BINANCE:
-            return self._fetch_binance_data()
-        else:
-            return self._fetch_yfinance_data()
-
-    def _fetch_yfinance_data(self) -> dict[str, np.ndarray]:
-        """Fetch data from Yahoo Finance for all symbols."""
-        import yfinance as yf
-
-        result: dict[str, list[float]] = {f: [] for f in self.fields if f in BUILTIN_FIELDS}
-
-        for symbol in self.symbols:
-            try:
-                ticker = yf.Ticker(symbol)
-                fast_info = ticker.fast_info
-
-                price = float(fast_info.get("lastPrice", 0) or fast_info.get("last_price", 0) or 0)
-                volume = float(fast_info.get("lastVolume", 0) or fast_info.get("last_volume", 0) or 0)
-
-                if "price" in result:
-                    result["price"].append(price)
-                if "volume" in result:
-                    result["volume"].append(volume)
-                if "open" in result:
-                    result["open"].append(float(fast_info.get("open", price)))
-                if "high" in result:
-                    result["high"].append(float(fast_info.get("dayHigh", price) or price))
-                if "low" in result:
-                    result["low"].append(float(fast_info.get("dayLow", price) or price))
-                if "vwap" in result:
-                    # yfinance doesn't provide VWAP directly; approximate with price
-                    result["vwap"].append(price)
-
-            except Exception:
-                logger.warning("yfinance fetch error for %s", symbol)
-                for f in result:
-                    result[f].append(0.0)
-
-        return {k: np.array(v, dtype=np.float64) for k, v in result.items()}
-
-    def _fetch_binance_data(self) -> dict[str, np.ndarray]:
-        """Fetch data from Binance for all symbols."""
-        try:
-            from binance.client import Client
-        except ImportError:
-            logger.error("python-binance not installed")
-            return {}
-
-        result: dict[str, list[float]] = {f: [] for f in self.fields if f in BUILTIN_FIELDS}
-
-        client = Client("", "")  # Public data, no key needed
-
-        for symbol in self.symbols:
-            try:
-                # Get latest kline for the configured resolution
-                interval_map = {
-                    "1min": Client.KLINE_INTERVAL_1MINUTE,
-                    "5min": Client.KLINE_INTERVAL_5MINUTE,
-                    "15min": Client.KLINE_INTERVAL_15MINUTE,
-                    "30min": Client.KLINE_INTERVAL_30MINUTE,
-                    "60min": Client.KLINE_INTERVAL_1HOUR,
-                    "1day": Client.KLINE_INTERVAL_1DAY,
-                }
-                interval = interval_map.get(self.resolution.value, Client.KLINE_INTERVAL_1MINUTE)
-                klines = client.get_klines(symbol=symbol, interval=interval, limit=1)
-
-                if klines:
-                    k = klines[0]
-                    # Binance kline format: [open_time, open, high, low, close, volume, ...]
-                    if "price" in result:
-                        result["price"].append(float(k[4]))  # close
-                    if "open" in result:
-                        result["open"].append(float(k[1]))
-                    if "high" in result:
-                        result["high"].append(float(k[2]))
-                    if "low" in result:
-                        result["low"].append(float(k[3]))
-                    if "volume" in result:
-                        result["volume"].append(float(k[5]))
-                    if "num_trades" in result:
-                        result["num_trades"].append(float(k[8]))
-                    if "vwap" in result:
-                        # Approximate VWAP: quote_volume / volume
-                        vol = float(k[5])
-                        qvol = float(k[7])
-                        result["vwap"].append(qvol / vol if vol > 0 else float(k[4]))
-                else:
-                    for f in result:
-                        result[f].append(0.0)
-
-                # Bid/ask from order book
-                if "bid" in result or "ask" in result or "spread" in result:
-                    try:
-                        book = client.get_order_book(symbol=symbol, limit=1)
-                        bid = float(book["bids"][0][0]) if book["bids"] else 0.0
-                        ask = float(book["asks"][0][0]) if book["asks"] else 0.0
-                        if "bid" in result:
-                            result["bid"].append(bid)
-                        if "ask" in result:
-                            result["ask"].append(ask)
-                        if "spread" in result:
-                            result["spread"].append(ask - bid)
-                    except Exception:
-                        if "bid" in result:
-                            result["bid"].append(0.0)
-                        if "ask" in result:
-                            result["ask"].append(0.0)
-                        if "spread" in result:
-                            result["spread"].append(0.0)
-
-            except Exception:
-                logger.warning("Binance fetch error for %s", symbol)
-                for f in result:
-                    result[f].append(0.0)
-
-        return {k: np.array(v, dtype=np.float64) for k, v in result.items()}
 
     def _append_to_buffer(self, field_name: str, values: np.ndarray) -> None:
         """Append new values to a rolling buffer by shifting left."""

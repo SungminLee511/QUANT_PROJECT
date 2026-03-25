@@ -46,13 +46,23 @@
 .dc-row input[type="number"] { width: 80px; }
 .dc-hint { font-size: 11px; color: #484f58; margin-left: 172px; margin-top: -6px; margin-bottom: 10px; }
 
-.field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; }
-.field-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #0d1117; border: 1px solid #21262d; border-radius: 6px; }
-.field-item.disabled { opacity: 0.4; }
-.field-item input[type="checkbox"] { accent-color: #58a6ff; }
-.field-item .f-name { flex: 1; font-size: 13px; font-family: 'SF Mono', Monaco, Consolas, monospace; }
-.field-item .f-lookback { width: 60px; padding: 4px 6px; background: #161b22; border: 1px solid #30363d; border-radius: 4px; color: #e1e4e8; font-size: 12px; text-align: center; }
-.field-item .f-tag { font-size: 10px; color: #d29922; background: #d2992222; padding: 1px 5px; border-radius: 3px; }
+.dc-warning { display: none; padding: 10px 14px; margin-bottom: 20px; background: #d2992218; border: 1px solid #d2992244; border-radius: 6px; font-size: 12px; color: #d29922; }
+.dc-warning.visible { display: block; }
+
+.field-section { margin-bottom: 24px; border: 1px solid #30363d; border-radius: 8px; overflow: hidden; }
+.field-section-header { padding: 10px 14px; background: #161b22; font-size: 13px; font-weight: 600; color: #e1e4e8; border-bottom: 1px solid #30363d; }
+.field-section-body { padding: 8px; }
+
+.field-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #0d1117; border: 1px solid #21262d; border-radius: 6px; margin-bottom: 6px; }
+.field-row:last-child { margin-bottom: 0; }
+.field-row.disabled { opacity: 0.4; }
+.field-row input[type="checkbox"] { accent-color: #58a6ff; flex-shrink: 0; }
+.field-row .f-name { min-width: 110px; font-size: 13px; font-weight: 600; font-family: 'SF Mono', Monaco, Consolas, monospace; color: #e1e4e8; }
+.field-row .f-label-group { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #8b949e; }
+.field-row .f-lookback { width: 60px; padding: 4px 6px; background: #161b22; border: 1px solid #30363d; border-radius: 4px; color: #e1e4e8; font-size: 12px; text-align: center; }
+.field-row .f-source-select { padding: 4px 8px; background: #161b22; border: 1px solid #30363d; border-radius: 4px; color: #e1e4e8; font-size: 12px; min-width: 100px; }
+.field-row .f-source-label { font-size: 12px; color: #8b949e; padding: 4px 8px; background: #161b22; border: 1px solid #21262d; border-radius: 4px; min-width: 80px; text-align: center; }
+.field-row .f-desc { font-size: 11px; color: #484f58; flex: 1; text-align: right; }
 
 /* ── Custom Data Tab ─── */
 .custom-data-tab { padding: 24px; overflow-y: auto; flex: 1; }
@@ -139,9 +149,18 @@
                 <div class="dc-hint">Effective strategy interval = resolution &times; N</div>
             </div>
 
-            <div class="dc-section">
-                <h3>Data Fields</h3>
-                <div class="field-grid" id="fieldGrid">
+            <div id="dcSourceWarning" class="dc-warning"></div>
+
+            <div class="field-section" id="liveFieldSection">
+                <div class="field-section-header">Live Data</div>
+                <div class="field-section-body" id="liveFieldGrid">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+
+            <div class="field-section" id="dailyFieldSection">
+                <div class="field-section-header">Daily Data</div>
+                <div class="field-section-body" id="dailyFieldGrid">
                     <!-- Populated by JS -->
                 </div>
             </div>
@@ -224,17 +243,58 @@ def main(data: dict) -> np.ndarray:
     let customEditors = [];  // {name, type, editor, element}
     let dataConfig = {};
 
-    const ALL_FIELDS = [
-        { name: "price", label: "price (close)", defaultLookback: 20 },
-        { name: "open", label: "open", defaultLookback: 10 },
-        { name: "high", label: "high", defaultLookback: 10 },
-        { name: "low", label: "low", defaultLookback: 10 },
-        { name: "volume", label: "volume", defaultLookback: 10 },
-        { name: "vwap", label: "vwap", defaultLookback: 5 },
-        { name: "bid", label: "bid", cryptoOnly: true, defaultLookback: 5 },
-        { name: "ask", label: "ask", cryptoOnly: true, defaultLookback: 5 },
-        { name: "spread", label: "spread", cryptoOnly: true, defaultLookback: 5 },
-        { name: "num_trades", label: "num_trades", cryptoOnly: true, defaultLookback: 5 },
+    const FIELD_REGISTRY = [
+        // ── Live fields ──
+        { name: "price", label: "Price", section: "live", defaultLookback: 20,
+          stockSources: ["yfinance", "alpaca"], cryptoSources: ["binance"],
+          description: "Last traded price" },
+        { name: "bid", label: "Bid", section: "live", defaultLookback: 5,
+          stockSources: ["alpaca"], cryptoSources: ["binance"],
+          description: "Best bid price" },
+        { name: "ask", label: "Ask", section: "live", defaultLookback: 5,
+          stockSources: ["alpaca"], cryptoSources: ["binance"],
+          description: "Best ask price" },
+        { name: "spread", label: "Spread", section: "live", defaultLookback: 5,
+          stockSources: ["alpaca"], cryptoSources: ["binance"],
+          description: "Ask - Bid spread" },
+        { name: "num_trades", label: "Num Trades", section: "live", defaultLookback: 5,
+          stockSources: [], cryptoSources: ["binance"],
+          description: "Number of trades in period" },
+
+        // ── Daily fields ──
+        { name: "open", label: "Open", section: "daily", defaultLookback: 10,
+          stockSources: ["yfinance", "alpaca"], cryptoSources: ["binance"],
+          description: "Today's opening price" },
+        { name: "high", label: "High", section: "daily", defaultLookback: 10,
+          stockSources: ["yfinance", "alpaca"], cryptoSources: ["binance"],
+          description: "Today's intraday high" },
+        { name: "low", label: "Low", section: "daily", defaultLookback: 10,
+          stockSources: ["yfinance", "alpaca"], cryptoSources: ["binance"],
+          description: "Today's intraday low" },
+        { name: "close", label: "Close", section: "daily", defaultLookback: 10,
+          stockSources: ["yfinance", "alpaca"], cryptoSources: ["binance"],
+          description: "Most recent closing price" },
+        { name: "volume", label: "Volume", section: "daily", defaultLookback: 10,
+          stockSources: ["yfinance", "alpaca"], cryptoSources: ["binance"],
+          description: "Today's trading volume" },
+        { name: "vwap", label: "VWAP", section: "daily", defaultLookback: 5,
+          stockSources: ["alpaca"], cryptoSources: ["binance"],
+          description: "Volume-weighted average price" },
+        { name: "day_change_pct", label: "Day Change %", section: "daily", defaultLookback: 5,
+          stockSources: ["yfinance"], cryptoSources: ["binance"],
+          description: "% change from previous close" },
+        { name: "market_cap", label: "Market Cap", section: "daily", defaultLookback: 5,
+          stockSources: ["yfinance"], cryptoSources: [],
+          description: "Market capitalization" },
+        { name: "pe_ratio", label: "P/E Ratio", section: "daily", defaultLookback: 5,
+          stockSources: ["yfinance"], cryptoSources: [],
+          description: "Trailing P/E ratio" },
+        { name: "week52_high", label: "52W High", section: "daily", defaultLookback: 5,
+          stockSources: ["yfinance"], cryptoSources: [],
+          description: "52-week high price" },
+        { name: "week52_low", label: "52W Low", section: "daily", defaultLookback: 5,
+          stockSources: ["yfinance"], cryptoSources: [],
+          description: "52-week low price" },
     ];
 
     const PER_STOCK_TEMPLATE = `def fetch(tickers: list[str]) -> "np.ndarray":
@@ -274,40 +334,123 @@ def main(data: dict) -> np.ndarray:
     }
 
     // ── Data Config (Tab 1) ───────────────────────────────
-    function renderFieldGrid(config) {
-        const grid = document.getElementById('fieldGrid');
-        const fields = (config && config.fields) || {};
+    function getSourcesForField(field) {
         const isCrypto = isCryptoSession();
+        return isCrypto ? field.cryptoSources : field.stockSources;
+    }
 
-        grid.innerHTML = ALL_FIELDS.map(f => {
+    function getDefaultSource(field) {
+        const sources = getSourcesForField(field);
+        return sources.length > 0 ? sources[0] : '';
+    }
+
+    function renderFieldRow(f, cfg) {
+        const sources = getSourcesForField(f);
+        if (sources.length === 0) return '';  // hide field if no sources for this session type
+
+        const enabled = cfg.enabled || false;
+        const lookback = cfg.lookback || f.defaultLookback;
+        const source = cfg.source || sources[0];
+
+        let sourceHtml;
+        if (sources.length === 1) {
+            sourceHtml = `<span class="f-source-label">${sources[0]}</span>
+                          <input type="hidden" class="f-source-value" value="${sources[0]}">`;
+        } else {
+            const opts = sources.map(s => `<option value="${s}" ${s === source ? 'selected' : ''}>${s}</option>`).join('');
+            sourceHtml = `<select class="f-source-select f-source-value" data-field="${f.name}" onchange="updateFieldSource('${f.name}', this.value)">${opts}</select>`;
+        }
+
+        return `
+            <div class="field-row ${enabled ? '' : 'disabled'}" id="fi-${f.name}">
+                <input type="checkbox" ${enabled ? 'checked' : ''} onchange="toggleField('${f.name}', this.checked)">
+                <span class="f-name">${f.name}</span>
+                <span class="f-label-group">Lookback:</span>
+                <input type="number" class="f-lookback" value="${lookback}" min="1" max="500"
+                    data-field="${f.name}" onchange="updateFieldLookback('${f.name}', this.value)">
+                <span class="f-label-group">Source:</span>
+                ${sourceHtml}
+                <span class="f-desc">${f.description}</span>
+            </div>`;
+    }
+
+    function renderFieldGrid(config) {
+        const liveGrid = document.getElementById('liveFieldGrid');
+        const dailyGrid = document.getElementById('dailyFieldGrid');
+        const fields = (config && config.fields) || {};
+
+        let liveHtml = '';
+        let dailyHtml = '';
+        let hasLiveFields = false;
+        let hasDailyFields = false;
+
+        FIELD_REGISTRY.forEach(f => {
             const cfg = fields[f.name] || {};
-            const enabled = cfg.enabled || false;
-            const lookback = cfg.lookback || f.defaultLookback;
-            const hidden = f.cryptoOnly && !isCrypto;
-            if (hidden) return '';
-            return `
-                <div class="field-item ${enabled ? '' : 'disabled'}" id="fi-${f.name}">
-                    <input type="checkbox" ${enabled ? 'checked' : ''} onchange="toggleField('${f.name}', this.checked)">
-                    <span class="f-name">${f.label}</span>
-                    ${f.cryptoOnly ? '<span class="f-tag">crypto</span>' : ''}
-                    <input type="number" class="f-lookback" value="${lookback}" min="1" max="500"
-                        data-field="${f.name}" onchange="updateFieldLookback('${f.name}', this.value)">
-                </div>`;
-        }).join('');
+            const row = renderFieldRow(f, cfg);
+            if (!row) return;
+            if (f.section === 'live') {
+                liveHtml += row;
+                hasLiveFields = true;
+            } else {
+                dailyHtml += row;
+                hasDailyFields = true;
+            }
+        });
+
+        liveGrid.innerHTML = liveHtml || '<div style="padding:12px;color:#484f58;font-size:12px;">No live fields available for this session type.</div>';
+        dailyGrid.innerHTML = dailyHtml || '<div style="padding:12px;color:#484f58;font-size:12px;">No daily fields available for this session type.</div>';
+
+        document.getElementById('liveFieldSection').style.display = hasLiveFields ? '' : 'none';
+        document.getElementById('dailyFieldSection').style.display = hasDailyFields ? '' : 'none';
+
+        updateSourceWarning();
     }
 
     function toggleField(name, enabled) {
         const item = document.getElementById('fi-' + name);
-        item.classList.toggle('disabled', !enabled);
+        if (item) item.classList.toggle('disabled', !enabled);
         if (!dataConfig.fields) dataConfig.fields = {};
-        if (!dataConfig.fields[name]) dataConfig.fields[name] = { enabled: false, lookback: 10 };
+        const f = FIELD_REGISTRY.find(r => r.name === name);
+        const defaultSource = f ? getDefaultSource(f) : '';
+        if (!dataConfig.fields[name]) dataConfig.fields[name] = { enabled: false, lookback: (f ? f.defaultLookback : 10), source: defaultSource };
         dataConfig.fields[name].enabled = enabled;
+        updateSourceWarning();
     }
 
     function updateFieldLookback(name, val) {
         if (!dataConfig.fields) dataConfig.fields = {};
-        if (!dataConfig.fields[name]) dataConfig.fields[name] = { enabled: false, lookback: 10 };
+        const f = FIELD_REGISTRY.find(r => r.name === name);
+        const defaultSource = f ? getDefaultSource(f) : '';
+        if (!dataConfig.fields[name]) dataConfig.fields[name] = { enabled: false, lookback: 10, source: defaultSource };
         dataConfig.fields[name].lookback = parseInt(val) || 1;
+    }
+
+    function updateFieldSource(name, source) {
+        if (!dataConfig.fields) dataConfig.fields = {};
+        const f = FIELD_REGISTRY.find(r => r.name === name);
+        if (!dataConfig.fields[name]) dataConfig.fields[name] = { enabled: false, lookback: (f ? f.defaultLookback : 10), source: source };
+        dataConfig.fields[name].source = source;
+        updateSourceWarning();
+    }
+
+    function updateSourceWarning() {
+        const warning = document.getElementById('dcSourceWarning');
+        const enabledSources = new Set();
+        FIELD_REGISTRY.forEach(f => {
+            const item = document.getElementById('fi-' + f.name);
+            if (!item) return;
+            const checkbox = item.querySelector('input[type="checkbox"]');
+            if (!checkbox || !checkbox.checked) return;
+            const sourceEl = item.querySelector('.f-source-value');
+            if (sourceEl) enabledSources.add(sourceEl.value);
+        });
+        if (enabledSources.size >= 2) {
+            const sourceList = Array.from(enabledSources).join(', ');
+            warning.innerHTML = `&#9888; Multiple data sources selected (${sourceList}) &mdash; this may increase scrape latency.`;
+            warning.classList.add('visible');
+        } else {
+            warning.classList.remove('visible');
+        }
     }
 
     function updateEffective() {
@@ -345,14 +488,16 @@ def main(data: dict) -> np.ndarray:
             custom_data: [],
             custom_global_data: [],
         };
-        ALL_FIELDS.forEach(f => {
+        FIELD_REGISTRY.forEach(f => {
             const item = document.getElementById('fi-' + f.name);
             if (!item) return;
             const checkbox = item.querySelector('input[type="checkbox"]');
             const lookbackInput = item.querySelector('.f-lookback');
+            const sourceEl = item.querySelector('.f-source-value');
             config.fields[f.name] = {
                 enabled: checkbox.checked,
                 lookback: parseInt(lookbackInput.value) || 0,
+                source: sourceEl ? sourceEl.value : getDefaultSource(f),
             };
         });
         // Custom data from data config's custom_data / custom_global_data (names + lookbacks)
@@ -626,6 +771,38 @@ def main(data: dict) -> np.ndarray:
 
     // ── Init ──────────────────────────────────────────────
     initStrategyEditor();
+
+    // Render default field grid immediately (so fields are always visible)
+    const defaultDataConfig = {
+        resolution: "1min",
+        exec_every_n: 1,
+        fields: {
+            price: { enabled: true, lookback: 20, source: "yfinance" },
+            bid: { enabled: false, lookback: 5, source: "alpaca" },
+            ask: { enabled: false, lookback: 5, source: "alpaca" },
+            spread: { enabled: false, lookback: 5, source: "alpaca" },
+            num_trades: { enabled: false, lookback: 5, source: "binance" },
+            open: { enabled: false, lookback: 10, source: "yfinance" },
+            high: { enabled: false, lookback: 10, source: "yfinance" },
+            low: { enabled: false, lookback: 10, source: "yfinance" },
+            close: { enabled: false, lookback: 10, source: "yfinance" },
+            volume: { enabled: true, lookback: 10, source: "yfinance" },
+            vwap: { enabled: false, lookback: 5, source: "alpaca" },
+            day_change_pct: { enabled: false, lookback: 5, source: "yfinance" },
+            market_cap: { enabled: false, lookback: 5, source: "yfinance" },
+            pe_ratio: { enabled: false, lookback: 5, source: "yfinance" },
+            week52_high: { enabled: false, lookback: 5, source: "yfinance" },
+            week52_low: { enabled: false, lookback: 5, source: "yfinance" },
+        },
+    };
+    dataConfig = defaultDataConfig;
+    renderFieldGrid(dataConfig);
+    updateEffective();
+
+    // Set default strategy code immediately
+    strategyEditor.setValue(`import numpy as np\n\n\ndef main(data: dict) -> np.ndarray:\n    """\n    Simple momentum: deviation from rolling mean price.\n    Positive deviation → long, negative → short.\n    Output is auto-normalized so sum(|weights|) = 1.\n    """\n    prices = data["price"]              # [N, lookback]\n    current = prices[:, -1]             # [N]\n    mean = prices.mean(axis=1)          # [N]\n\n    # Avoid division by zero\n    safe_mean = np.where(mean != 0, mean, 1.0)\n    deviation = (current - safe_mean) / safe_mean  # [N]\n\n    return deviation\n`);
+
+    // Then load from backend (overrides defaults if successful)
     loadEditorData();
     updateEditorLabel();
 </script>

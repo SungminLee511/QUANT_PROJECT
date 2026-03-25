@@ -4,6 +4,7 @@ All API endpoints accept an optional ?session_id= query parameter.
 When provided, data is scoped to that session via namespaced Redis keys and DB filtering.
 """
 
+import json
 import logging
 from typing import Optional
 
@@ -50,11 +51,13 @@ def create_dashboard_router(
         sessions = await session_manager.get_all_sessions()
         for s in sessions:
             s["is_running"] = session_manager.is_running(s["id"])
-        return templates.TemplateResponse(request, "dashboard.html", {
+        session_ids = [s["id"] for s in sessions]
+        return templates.TemplateResponse(request, "overview.html", {
             "user": get_current_user(request),
             "sessions": sessions,
             "active_page": "overview",
             "selected_session": None,
+            "session_ids_json": json.dumps(session_ids),
         })
 
     @router.get("/")

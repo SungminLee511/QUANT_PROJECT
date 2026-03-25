@@ -1,0 +1,232 @@
+"""Binance data source — fetches live + daily crypto data from public API."""
+
+import logging
+import numpy as np
+import requests
+
+logger = logging.getLogger(__name__)
+
+BINANCE_BASE = "https://api.binance.com"
+
+
+class BinanceSource:
+    """Fetches market data from Binance public API.
+
+    Live fields: price, bid, ask, spread, num_trades
+    Daily fields: open, high, low, close, volume, vwap, day_change_pct
+
+    No API key required (uses public endpoints).
+    """
+
+    LIVE_FIELDS = {"price", "bid", "ask", "spread", "num_trades"}
+    DAILY_FIELDS = {"open", "high", "low", "close", "volume", "vwap", "day_change_pct"}
+    ALL_FIELDS = LIVE_FIELDS | DAILY_FIELDS
+
+    def __init__(self):
+        self._session = requests.Session()
+
+    def fetch(self, symbols: list[str], requested_fields: set[str]) -> dict[str, np.ndarray]:
+        """Fetch all requested fields for all symbols from Binance."""
+        fields_to_fetch = requested_fields & self.ALL_FIELDS
+        if not fields_to_fetch:
+            return {}
+
+        n = len(symbols)
+        result: dict[str, np.ndarray] = {}
+
+        needs_orderbook = bool(fields_to_fetch & {"bid", "ask", "spread"})
+        needs_24hr = bool(fields_to_fetch & (self.DAILY_FIELDS | {"price", "num_trades"}))
+
+        sym_idx = {s: i for i, s in enumerate(symbols)}
+
+        # 1. Fetch 24hr ticker stats (gives price, OHLCV, volume, trades count, etc.)
+        if needs_24hr:
+            prices = np.zeros(n, dtype=np.float64)
+            opens = np.zeros(n, dtype=np.float64)
+            highs = np.zeros(n, dtype=np.float64)
+            lows = np.zeros(n, dtype=np.float64)
+            closes = np.zeros(n, dtype=np.float64)
+            volumes = np.zeros(n, dtype=np.float64)
+            vwaps = np.zeros(n, dtype=np.float64)
+            num_trades = np.zeros(n, dtype=np.float64)
+            day_change = np.zeros(n, dtype=np.float64)
+
+            try:
+                # Use the multi-symbol 24hr ticker endpoint
+                symbols_param = str(symbols).replace("'", '"')
+                resp = self._session.get(
+                    f"{BINANCE_BASE}/api/v3/ticker/24hr",
+                    params={"symbols": symbols_param},
+                    timeout=10,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+
+                if isinstance(data, dict):
+                    data = [data]
+
+                for item in data:
+                    sym = item.get("symbol", "")
+                    idx = sym_idx.get(sym)
+                    if idx is None:
+                        continue
+
+                    prices[idx] = float(item.get("lastPrice", 0))
+                    opens[idx] = float(item.get("openPrice", 0))
+                    highs[idx] = float(item.get("highPrice", 0))
+                    lows[idx] = float(item.get("lowPrice", 0))
+                    closes[idx] = float(item.get("prevClosePrice", 0))
+                    volumes[idx] = float(item.get("volume", 0))
+                    vwaps[idx] = float(item.get("weightedAvgPrice", 0))
+                    num_trades[idx] = float(item.get("count", 0))
+                    day_change[idx] = float(item.get("priceChangePercent", 0))
+
+            except Exception:
+                logger.warning("Binance 24hr ticker fetch error", exc_info=True)
+
+            if "price" in fields_to_fetch:
+                result["price"] = prices
+            if "open" in fields_to_fetch:
+                result["open"] = opens
+            if "high" in fields_to_fetch:
+                result["high"] = highs
+            if "low" in fields_to_fetch:
+                result["low"] = lows
+            if "close" in fields_to_fetch:
+                result["close"] = closes
+            if "volume" in fields_to_fetch:
+                result["volume"] = volumes
+            if "vwap" in fields_to_fetch:
+                result["vwap"] = vwaps
+            if "num_trades" in fields_to_fetch:
+                result["num_trades"] = num_trades
+            if "day_change_pct" in fields_to_fetch:
+                result["day_change_pct"] = day_change
+
+        # 2. Fetch order book for bid/ask/spread (per-symbol, since no multi-symbol endpoint)
+        if needs_orderbook:
+            bids = np.zeros(n, dtype=np.float64)
+            asks = np.zeros(n, dtype=np.float64)
+
+            for symbol in symbols:
+                idx = sym_idx[symbol]
+                try:
+                    resp = self._session.get(
+                        f"{BINANCE_BASE}/api/v3/depth",
+                        params={"symbol": symbol, "limit": 1},
+                        timeout=5,
+                    )
+                    resp.raise_for_status()
+                    book = resp.json()
+                    if book.get("bids"):
+                        bids[idx] = float(book["bids"][0][0])
+                    if book.get("asks"):
+                        asks[idx] = float(book["asks"][0][0])
+                except Exception:
+                    logger.warning("Binance order book fetch error for %s", symbol)
+
+            if "bid" in fields_to_fetch:
+                result["bid"] = bids
+            if "ask" in fields_to_fetch:
+                result["ask"] = asks
+            if "spread" in fields_to_fetch:
+                result["spread"] = asks - bids
+
+        return result
+
+    def fetch_history(
+        self,
+        symbols: list[str],
+        requested_fields: set[str],
+        resolution: str,
+        lookback: int,
+    ) -> dict[str, np.ndarray]:
+        """Fetch historical klines to backfill rolling buffers.
+
+        Args:
+            symbols: List of Binance symbol strings (e.g. ["BTCUSDT"]).
+            requested_fields: Set of field names to fetch.
+            resolution: Data resolution string (e.g. "1min", "5min", "1day").
+            lookback: Number of historical bars requested.
+
+        Returns:
+            Dict mapping field_name -> np.ndarray of shape [N_symbols, lookback].
+            Columns are oldest-first (left=oldest, right=most recent).
+        """
+        fields_to_fetch = requested_fields & self.ALL_FIELDS
+        # bid/ask/spread have no historical kline data — skip
+        bar_fields = fields_to_fetch & {"open", "high", "low", "close", "volume",
+                                         "price", "vwap", "day_change_pct", "num_trades"}
+        if not bar_fields:
+            return {}
+
+        # Map resolution to Binance interval
+        res_map = {
+            "1min": "1m", "5min": "5m", "15min": "15m",
+            "30min": "30m", "60min": "1h", "1day": "1d",
+        }
+        interval = res_map.get(resolution, "1d")
+
+        n = len(symbols)
+        sym_idx = {s: i for i, s in enumerate(symbols)}
+
+        # Initialize arrays
+        field_arrays: dict[str, np.ndarray] = {}
+        for f in bar_fields:
+            field_arrays[f] = np.full((n, lookback), np.nan, dtype=np.float64)
+
+        # Fetch klines per symbol (no multi-symbol klines endpoint)
+        for symbol in symbols:
+            idx = sym_idx[symbol]
+            try:
+                resp = self._session.get(
+                    f"{BINANCE_BASE}/api/v3/klines",
+                    params={
+                        "symbol": symbol,
+                        "interval": interval,
+                        "limit": lookback,
+                    },
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                klines = resp.json()
+
+                # Kline format: [open_time, open, high, low, close, volume,
+                #                close_time, quote_volume, num_trades, ...]
+                bar_count = len(klines)
+                take = min(bar_count, lookback)
+                recent = klines[-take:]
+
+                for j, k in enumerate(recent):
+                    col = lookback - take + j
+                    o, h, lo, c, v = float(k[1]), float(k[2]), float(k[3]), float(k[4]), float(k[5])
+                    quote_vol = float(k[7])
+                    trades = float(k[8])
+
+                    if "open" in field_arrays:
+                        field_arrays["open"][idx, col] = o
+                    if "high" in field_arrays:
+                        field_arrays["high"][idx, col] = h
+                    if "low" in field_arrays:
+                        field_arrays["low"][idx, col] = lo
+                    if "close" in field_arrays:
+                        field_arrays["close"][idx, col] = c
+                    if "price" in field_arrays:
+                        field_arrays["price"][idx, col] = c
+                    if "volume" in field_arrays:
+                        field_arrays["volume"][idx, col] = v
+                    if "vwap" in field_arrays:
+                        # Approximate VWAP = quote_volume / volume
+                        field_arrays["vwap"][idx, col] = (quote_vol / v) if v > 0 else c
+                    if "num_trades" in field_arrays:
+                        field_arrays["num_trades"][idx, col] = trades
+                    if "day_change_pct" in field_arrays:
+                        # Per-bar change pct: (close - open) / open * 100
+                        field_arrays["day_change_pct"][idx, col] = (
+                            ((c - o) / o * 100) if o > 0 else 0.0
+                        )
+
+            except Exception:
+                logger.warning("Binance klines fetch error for %s", symbol, exc_info=True)
+
+        return {k: v for k, v in field_arrays.items() if k in bar_fields}
