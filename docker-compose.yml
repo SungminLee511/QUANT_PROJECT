@@ -4,8 +4,7 @@ services:
   redis:
     image: redis:7-alpine
     command: redis-server --appendonly yes  # BUG 6: enable AOF persistence
-    ports:
-      - "6379:6379"
+    network_mode: host
     volumes:
       - redis_data:/data
     healthcheck:
@@ -16,12 +15,11 @@ services:
 
   postgres:
     image: timescale/timescaledb:2.17.2-pg16  # BUG 4: pin version to avoid silent breakage
+    network_mode: host
     environment:
       POSTGRES_DB: quant_trader
       POSTGRES_USER: quant
       POSTGRES_PASSWORD: ${QT_DB_PASSWORD:-changeme}
-    ports:
-      - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
       - ./db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro  # BUG 2: enable TimescaleDB extension
@@ -35,40 +33,13 @@ services:
   # Ensures schema exists even after volume wipe or first boot.
   db-init:
     build: .
-    command: >
-      bash -c "
-        echo 'Waiting for database to be fully ready...' &&
-        python -c \"
-import time, sys
-for i in range(30):
-    try:
-        import asyncpg, asyncio
-        async def check():
-            conn = await asyncpg.connect(
-                host='postgres', port=5432,
-                user='quant', password='$${QT_DB_PASSWORD:-changeme}',
-                database='quant_trader'
-            )
-            await conn.close()
-        asyncio.run(check())
-        print('Database is ready')
-        break
-    except Exception as e:
-        print(f'Attempt {i+1}/30: {e}')
-        time.sleep(2)
-else:
-    print('Database not ready after 60s')
-    sys.exit(1)
-        \" &&
-        echo 'Running Alembic migrations...' &&
-        alembic upgrade head &&
-        echo 'Database initialization complete'
-      "
+    network_mode: host
+    command: ["bash", "-c", "echo 'Waiting for database...' && sleep 5 && alembic upgrade head && echo 'Database initialization complete'"]
     env_file: .env
     environment:
       QT_ENV: prod
-      QT_REDIS_HOST: redis
-      QT_DATABASE_HOST: postgres
+      QT_REDIS_HOST: localhost
+      QT_DATABASE_HOST: localhost
     depends_on:
       postgres:
         condition: service_healthy
@@ -79,14 +50,13 @@ else:
   # Previously active sessions are auto-restarted on startup.
   engine:
     build: .
+    network_mode: host
     command: python -m scripts.run_monitor
     env_file: .env
     environment:
       QT_ENV: prod
-      QT_REDIS_HOST: redis
-      QT_DATABASE_HOST: postgres
-    ports:
-      - "8080:8080"
+      QT_REDIS_HOST: localhost
+      QT_DATABASE_HOST: localhost
     depends_on:
       redis:
         condition: service_healthy

@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 ALLOWED_IMPORTS = {
     # Python stdlib
     "math", "statistics", "collections", "itertools", "functools",
-    "datetime", "decimal", "typing",
+    "datetime", "decimal", "typing", "logging",
     # Data science
     "numpy", "pandas",
     # Project imports

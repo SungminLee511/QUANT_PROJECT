@@ -309,7 +309,7 @@ User-submitted strategy code **must** follow this interface. `strategy/validator
 ### Allowed Imports (Whitelist)
 
 ```
-math, statistics, collections, itertools, functools, datetime, decimal,
+math, statistics, collections, itertools, functools, datetime, decimal, logging,
 numpy, pandas,
 shared.enums (Exchange, Side, Signal, OrderStatus, AssetType, OrderType),
 shared.schemas (MarketTick, OHLCVBar, TradeSignal),
