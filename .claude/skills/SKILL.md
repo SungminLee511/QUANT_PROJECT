@@ -6,7 +6,7 @@
 
 **Project Root:** `/home/PROJECT/QUANT_PROJECT/`
 **Origin:** Custom-built modular trading platform — infrastructure only, strategy is a swappable component via web editor.
-**Conda Env:** N/A — runs in Docker containers (Python 3.12)
+**Conda Env:** `SML_env` — runs natively (Docker doesn't work on this server)
 **Branch:** `feature/multi-session` (multi-session + simulation mode)
 
 ---
@@ -398,13 +398,63 @@ Auto-activates kill switch on drawdown or daily loss breach.
 
 ---
 
-## Docker Services
+## Running on This Server (Native, No Docker)
 
-| Service | Command | Ports | Depends On |
-|---|---|---|---|
-| `redis` | Redis 7 Alpine | 6379 | — |
-| `postgres` | TimescaleDB pg16 | 5432 | — |
-| `engine` | `python -m scripts.run_monitor` | 8080 | redis, postgres |
+Docker does not work on this server (restricted container, no `unshare` permission, `vfs` storage driver). Run all services natively instead.
+
+### Startup Sequence
+
+```bash
+# 1. Fix Redis write errors (if needed)
+redis-cli CONFIG SET stop-writes-on-bgsave-error no
+
+# 2. Start PostgreSQL (data lives in QUANT_PROJECT/pgdata/)
+su postgres -s /bin/bash -c "/usr/lib/postgresql/14/bin/pg_ctl -D /home/PROJECT/QUANT_PROJECT/pgdata -l /home/PROJECT/QUANT_PROJECT/pgdata/logfile start"
+
+# 3. Start the app
+cd /home/PROJECT/QUANT_PROJECT
+conda run -n SML_env nohup python -u -m scripts.run_monitor > /home/PROJECT/QUANT_PROJECT/app_log.txt 2>&1 &
+
+# 4. Start Cloudflare tunnel for external access
+nohup cloudflared tunnel --url http://localhost:8080 > /home/PROJECT/QUANT_PROJECT/cloudflared_log.txt 2>&1 &
+# Get the link:
+grep "trycloudflare.com" /home/PROJECT/QUANT_PROJECT/cloudflared_log.txt
+```
+
+### First-Time Setup (only once)
+
+```bash
+# Create postgres user and init DB
+useradd -m postgres
+mkdir -p /var/run/postgresql && chown postgres:postgres /var/run/postgresql
+mkdir -p /home/PROJECT/QUANT_PROJECT/pgdata
+chown postgres:postgres /home/PROJECT/QUANT_PROJECT/pgdata
+su postgres -s /bin/bash -c "/usr/lib/postgresql/14/bin/initdb -D /home/PROJECT/QUANT_PROJECT/pgdata"
+
+# Create DB and user (matches config/default.yaml)
+su postgres -s /bin/bash -c "psql -c \"CREATE USER quant WITH PASSWORD 'changeme';\""
+su postgres -s /bin/bash -c "psql -c \"CREATE DATABASE quant_trader OWNER quant;\""
+
+# Install Python deps
+conda run -n SML_env pip install -q redis[hiredis] sqlalchemy[asyncio] asyncpg psycopg2-binary fastapi 'uvicorn[standard]' jinja2 python-multipart yfinance pydantic pydantic-settings pyyaml structlog python-dotenv
+```
+
+### Shutdown
+
+```bash
+pkill -f "scripts.run_monitor"
+pkill -f cloudflared
+su postgres -s /bin/bash -c "/usr/lib/postgresql/14/bin/pg_ctl -D /home/PROJECT/QUANT_PROJECT/pgdata stop"
+```
+
+### Services Summary
+
+| Service | How | Port |
+|---|---|---|
+| Redis | Already running on server | 6379 |
+| PostgreSQL 14 | Manual start (pgdata/ in project root) | 5432 |
+| Engine (FastAPI) | `python -m scripts.run_monitor` via conda | 8080 |
+| Cloudflare tunnel | `cloudflared tunnel --url http://localhost:8080` | Random `.trycloudflare.com` URL |
 
 **Note:** Previously 4 separate app services (data-feed, strategy, execution, monitor). Now consolidated into single `engine` service — `SessionManager` orchestrates all trading pipelines as asyncio tasks within one process.
 
