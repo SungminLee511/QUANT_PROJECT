@@ -9,6 +9,8 @@
 
 {% block extra_styles %}
 .editor-container { display: flex; flex-direction: column; height: calc(100vh - 52px); overflow: hidden; }
+
+/* ── Toolbar ─── */
 .toolbar { background: #161b22; border-bottom: 1px solid #30363d; padding: 10px 24px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
 .toolbar .btn { padding: 7px 16px; border: 1px solid #30363d; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; background: #21262d; color: #e1e4e8; }
 .toolbar .btn:hover { background: #30363d; }
@@ -24,14 +26,58 @@
 .toolbar .session-label { font-size: 12px; color: #8b949e; background: #21262d; padding: 4px 10px; border-radius: 4px; }
 .toolbar .session-label .name { color: #d29922; font-weight: 600; }
 
+/* ── Tabs ─── */
+.tab-bar { display: flex; background: #161b22; border-bottom: 1px solid #30363d; flex-shrink: 0; }
+.tab-bar .tab { padding: 10px 20px; font-size: 13px; font-weight: 600; color: #8b949e; cursor: pointer; border-bottom: 2px solid transparent; }
+.tab-bar .tab:hover { color: #e1e4e8; background: #1c2129; }
+.tab-bar .tab.active { color: #e1e4e8; border-bottom-color: #58a6ff; }
+
+.tab-content { flex: 1; overflow: auto; display: none; }
+.tab-content.active { display: flex; flex-direction: column; }
+
+/* ── Data Config Tab ─── */
+.data-config { padding: 24px; overflow-y: auto; flex: 1; }
+.dc-section { margin-bottom: 24px; }
+.dc-section h3 { font-size: 14px; margin-bottom: 12px; color: #e1e4e8; }
+.dc-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.dc-row label { font-size: 13px; color: #8b949e; min-width: 160px; }
+.dc-row select, .dc-row input[type="number"] { padding: 7px 10px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #e1e4e8; font-size: 13px; }
+.dc-row select { min-width: 140px; }
+.dc-row input[type="number"] { width: 80px; }
+.dc-hint { font-size: 11px; color: #484f58; margin-left: 172px; margin-top: -6px; margin-bottom: 10px; }
+
+.field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; }
+.field-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #0d1117; border: 1px solid #21262d; border-radius: 6px; }
+.field-item.disabled { opacity: 0.4; }
+.field-item input[type="checkbox"] { accent-color: #58a6ff; }
+.field-item .f-name { flex: 1; font-size: 13px; font-family: 'SF Mono', Monaco, Consolas, monospace; }
+.field-item .f-lookback { width: 60px; padding: 4px 6px; background: #161b22; border: 1px solid #30363d; border-radius: 4px; color: #e1e4e8; font-size: 12px; text-align: center; }
+.field-item .f-tag { font-size: 10px; color: #d29922; background: #d2992222; padding: 1px 5px; border-radius: 3px; }
+
+/* ── Custom Data Tab ─── */
+.custom-data-tab { padding: 24px; overflow-y: auto; flex: 1; }
+.cd-block { margin-bottom: 20px; border: 1px solid #30363d; border-radius: 8px; overflow: hidden; }
+.cd-header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: #161b22; }
+.cd-header input { flex: 1; padding: 5px 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #e1e4e8; font-size: 13px; }
+.cd-header select { padding: 5px 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #e1e4e8; font-size: 12px; }
+.cd-header .cd-remove { color: #f85149; cursor: pointer; font-size: 16px; padding: 2px 6px; border: none; background: none; }
+.cd-header .cd-remove:hover { background: #f8514922; border-radius: 4px; }
+.cd-editor { height: 180px; }
+.cd-editor .CodeMirror { height: 100% !important; font-size: 13px; }
+.cd-add-btn { padding: 8px 16px; border: 1px dashed #30363d; border-radius: 6px; cursor: pointer; font-size: 13px; color: #8b949e; background: none; width: 100%; text-align: center; }
+.cd-add-btn:hover { border-color: #58a6ff; color: #58a6ff; }
+
+/* ── Strategy Code Tab ─── */
 .code-area { flex: 1; overflow: hidden; }
 .CodeMirror { height: 100% !important; font-size: 14px; }
 
+/* ── Feedback panel ─── */
 .feedback { background: #161b22; border-top: 1px solid #30363d; padding: 12px 24px; max-height: 160px; overflow-y: auto; flex-shrink: 0; font-size: 13px; font-family: 'SF Mono', Monaco, Consolas, monospace; }
 .feedback .err-line { color: #f85149; margin: 2px 0; }
 .feedback .warn-line { color: #d29922; margin: 2px 0; }
 .feedback .ok-line { color: #3fb950; margin: 2px 0; }
 
+/* ── Reference panel ─── */
 .reference-panel { background: #161b22; border-top: 1px solid #30363d; flex-shrink: 0; }
 .ref-toggle { padding: 8px 24px; cursor: pointer; font-size: 12px; color: #8b949e; user-select: none; }
 .ref-toggle:hover { background: #1c2129; }
@@ -41,13 +87,8 @@
 .reference-panel.open .ref-body { display: block; }
 .ref-section { margin-bottom: 12px; }
 .ref-section h4 { color: #e1e4e8; font-size: 12px; margin-bottom: 4px; }
-.ref-section p { margin: 2px 0; }
 .ref-section pre { background: #0d1117; padding: 8px 12px; border-radius: 6px; font-size: 12px; color: #e1e4e8; overflow-x: auto; margin: 4px 0; }
 .ref-section code { color: #79c0ff; background: #21262d; padding: 1px 4px; border-radius: 3px; font-size: 11px; }
-.ref-table { width: 100%; border-collapse: collapse; margin: 4px 0; }
-.ref-table td { padding: 3px 8px; border-bottom: 1px solid #21262d; font-size: 11px; }
-.ref-table td:first-child { font-family: 'SF Mono', Monaco, Consolas, monospace; color: #79c0ff; white-space: nowrap; }
-.ref-table td:nth-child(2) { color: #d29922; white-space: nowrap; width: 70px; }
 
 .no-session-notice { padding: 40px 24px; text-align: center; color: #484f58; }
 .no-session-notice h3 { color: #8b949e; margin-bottom: 8px; }
@@ -55,10 +96,11 @@
 
 {% block content %}
 <div class="editor-container">
+    <!-- Toolbar -->
     <div class="toolbar">
-        <button class="btn" onclick="validateCode()">Validate</button>
-        <button class="btn btn-primary" onclick="deployCode()">Deploy</button>
-        <button class="btn btn-warn" onclick="resetCode()">Reset to Default</button>
+        <button class="btn" onclick="validateAll()">Validate</button>
+        <button class="btn btn-primary" onclick="deployAll()">Deploy</button>
+        <button class="btn btn-warn" onclick="resetAll()">Reset to Default</button>
         <div class="spacer"></div>
         <span id="sessionLabel" class="session-label" style="display:none;">
             Editing for: <span class="name" id="editorSessionName"></span>
@@ -66,68 +108,110 @@
         <span id="statusBadge" class="status idle">Ready</span>
     </div>
 
-    <div class="code-area">
-        <textarea id="codeEditor"></textarea>
+    <!-- Tab bar -->
+    <div class="tab-bar">
+        <div class="tab active" data-tab="dataConfig" onclick="switchTab('dataConfig')">Data Config</div>
+        <div class="tab" data-tab="customData" onclick="switchTab('customData')">Custom Data</div>
+        <div class="tab" data-tab="strategyCode" onclick="switchTab('strategyCode')">Strategy Code</div>
     </div>
 
+    <!-- Tab 1: Data Config -->
+    <div class="tab-content active" id="tab-dataConfig">
+        <div class="data-config">
+            <div class="dc-section">
+                <h3>Scrape Settings</h3>
+                <div class="dc-row">
+                    <label>Scrape Resolution</label>
+                    <select id="dcResolution">
+                        <option value="1min">1 minute</option>
+                        <option value="5min">5 minutes</option>
+                        <option value="15min">15 minutes</option>
+                        <option value="30min">30 minutes</option>
+                        <option value="60min">1 hour</option>
+                        <option value="1day">1 day</option>
+                    </select>
+                </div>
+                <div class="dc-row">
+                    <label>Strategy Runs Every</label>
+                    <input type="number" id="dcExecEveryN" value="1" min="1" max="100">
+                    <span style="font-size:12px;color:#8b949e;">scrapes (<span id="dcEffective">= 1min</span>)</span>
+                </div>
+                <div class="dc-hint">Effective strategy interval = resolution &times; N</div>
+            </div>
+
+            <div class="dc-section">
+                <h3>Data Fields</h3>
+                <div class="field-grid" id="fieldGrid">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab 2: Custom Data Functions -->
+    <div class="tab-content" id="tab-customData">
+        <div class="custom-data-tab">
+            <h3 style="margin-bottom:16px;">Custom Data Functions</h3>
+            <p style="font-size:12px;color:#484f58;margin-bottom:16px;">
+                Per-stock: <code style="color:#79c0ff;">def fetch(tickers: list[str]) -> np.ndarray</code> &nbsp;|&nbsp;
+                Global: <code style="color:#79c0ff;">def fetch() -> float</code>
+            </p>
+            <div id="customDataBlocks"></div>
+            <button class="cd-add-btn" onclick="addCustomDataBlock()">+ Add Custom Data Function</button>
+        </div>
+    </div>
+
+    <!-- Tab 3: Strategy Code -->
+    <div class="tab-content" id="tab-strategyCode">
+        <div class="code-area">
+            <textarea id="codeEditor"></textarea>
+        </div>
+        <div class="reference-panel">
+            <div class="ref-toggle" onclick="this.parentElement.classList.toggle('open')">
+                <span class="ref-arrow">&#9654;</span> <strong>Strategy Reference</strong> <span style="color:#484f58;font-size:11px;">(click to expand)</span>
+            </div>
+            <div class="ref-body">
+                <div class="ref-section">
+                    <h4>Contract</h4>
+                    <pre>import numpy as np
+
+def main(data: dict) -> np.ndarray:
+    """
+    Args:
+        data: dict of np.ndarray. Keys match your Data Config fields.
+              data["price"]  → shape [N, lookback]
+              data["volume"] → shape [N, lookback]
+              data["tickers"] → list[str] of length N
+              Custom per-stock → shape [N, lookback]
+              Custom global   → shape [1, lookback] (broadcast-ready)
+    Returns:
+        np.ndarray of shape [N] — portfolio weights.
+        Positive = long, negative = short.
+        Auto-normalized so sum(|weights|) = 1.
+    """</pre>
+                </div>
+                <div class="ref-section">
+                    <h4>Allowed imports</h4>
+                    <p><code>numpy</code>, <code>math</code>, <code>statistics</code>, <code>collections</code>, <code>itertools</code>, <code>functools</code>, <code>datetime</code>, <code>decimal</code>, <code>typing</code>, <code>logging</code>, <code>pandas</code></p>
+                </div>
+                <div class="ref-section">
+                    <h4>Example</h4>
+                    <pre>import numpy as np
+
+def main(data: dict) -> np.ndarray:
+    prices = data["price"]            # [N, 20]
+    current = prices[:, -1]           # [N]
+    mean = prices.mean(axis=1)        # [N]
+    safe_mean = np.where(mean != 0, mean, 1.0)
+    deviation = (current - safe_mean) / safe_mean
+    return deviation  # auto-normalized</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Feedback (shared across tabs) -->
     <div id="feedback" class="feedback" style="display:none;"></div>
-
-    <div class="reference-panel">
-        <div class="ref-toggle" onclick="this.parentElement.classList.toggle('open')">
-            <span class="ref-arrow">&#9654;</span> <strong>Strategy Reference</strong> <span style="color:#484f58;font-size:11px;">(click to expand)</span>
-        </div>
-        <div class="ref-body">
-            <div class="ref-section">
-                <h4>Contract</h4>
-                <p>Your class must subclass <code>BaseStrategy</code>. Required methods:</p>
-                <pre>async def on_tick(self, tick: MarketTick, extra_data=None) -> TradeSignal | None
-async def on_bar(self, bar: OHLCVBar, extra_data=None) -> TradeSignal | None</pre>
-            </div>
-            <div class="ref-section">
-                <h4>MarketTick fields</h4>
-                <table class="ref-table">
-                    <tr><td><code>tick.symbol</code></td><td>str</td><td>Ticker symbol (e.g. "BTCUSDT", "AAPL")</td></tr>
-                    <tr><td><code>tick.price</code></td><td>float</td><td>Last trade price</td></tr>
-                    <tr><td><code>tick.volume</code></td><td>float</td><td>Trade size / quantity</td></tr>
-                    <tr><td><code>tick.timestamp</code></td><td>datetime</td><td>UTC timestamp</td></tr>
-                    <tr><td><code>tick.exchange</code></td><td>Exchange</td><td>BINANCE or ALPACA</td></tr>
-                </table>
-            </div>
-            <div class="ref-section">
-                <h4>OHLCVBar fields</h4>
-                <table class="ref-table">
-                    <tr><td><code>bar.symbol</code></td><td>str</td><td>Ticker symbol</td></tr>
-                    <tr><td><code>bar.open</code></td><td>float</td><td>Bar open price</td></tr>
-                    <tr><td><code>bar.high</code></td><td>float</td><td>Bar high price</td></tr>
-                    <tr><td><code>bar.low</code></td><td>float</td><td>Bar low price</td></tr>
-                    <tr><td><code>bar.close</code></td><td>float</td><td>Bar close price</td></tr>
-                    <tr><td><code>bar.volume</code></td><td>float</td><td>Total volume in bar</td></tr>
-                    <tr><td><code>bar.interval</code></td><td>str</td><td>Bar interval (e.g. "1m", "5m", "1h")</td></tr>
-                    <tr><td><code>bar.timestamp</code></td><td>datetime</td><td>UTC timestamp of bar close</td></tr>
-                </table>
-            </div>
-            <div class="ref-section">
-                <h4>extra_data (custom pipeline)</h4>
-                <p>Optional dict from <code>data/custom_data.py</code>. Keyed by symbol:</p>
-                <pre>extra_data.get("AAPL", {}).get("put_call_ratio")</pre>
-                <p style="color:#484f58;font-size:11px;">Returns None if no custom pipeline is configured. Edit <code>data/custom_data.py</code> to add your own data sources.</p>
-            </div>
-            <div class="ref-section">
-                <h4>TradeSignal (return value)</h4>
-                <pre>TradeSignal(
-    symbol="BTCUSDT",
-    signal=Signal.BUY,    # BUY, SELL, or HOLD
-    strength=0.8,         # 0.0 to 1.0
-    strategy_id=self.strategy_id,
-    metadata={"reason": "..."},  # optional dict
-)</pre>
-            </div>
-            <div class="ref-section">
-                <h4>Allowed imports</h4>
-                <p><code>math</code>, <code>statistics</code>, <code>collections</code>, <code>itertools</code>, <code>functools</code>, <code>datetime</code>, <code>decimal</code>, <code>numpy</code>, <code>pandas</code>, <code>shared.enums</code>, <code>shared.schemas</code>, <code>strategy.base</code></p>
-            </div>
-        </div>
-    </div>
 </div>
 {% endblock %}
 
@@ -135,10 +219,183 @@ async def on_bar(self, bar: OHLCVBar, extra_data=None) -> TradeSignal | None</pr
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
 <script>
-    let editor;
+    // ── State ─────────────────────────────────────────────
+    let strategyEditor;
+    let customEditors = [];  // {name, type, editor, element}
+    let dataConfig = {};
 
-    async function init() {
-        editor = CodeMirror.fromTextArea(document.getElementById('codeEditor'), {
+    const ALL_FIELDS = [
+        { name: "price", label: "price (close)", defaultLookback: 20 },
+        { name: "open", label: "open", defaultLookback: 10 },
+        { name: "high", label: "high", defaultLookback: 10 },
+        { name: "low", label: "low", defaultLookback: 10 },
+        { name: "volume", label: "volume", defaultLookback: 10 },
+        { name: "vwap", label: "vwap", defaultLookback: 5 },
+        { name: "bid", label: "bid", cryptoOnly: true, defaultLookback: 5 },
+        { name: "ask", label: "ask", cryptoOnly: true, defaultLookback: 5 },
+        { name: "spread", label: "spread", cryptoOnly: true, defaultLookback: 5 },
+        { name: "num_trades", label: "num_trades", cryptoOnly: true, defaultLookback: 5 },
+    ];
+
+    const PER_STOCK_TEMPLATE = `def fetch(tickers: list[str]) -> "np.ndarray":
+    """
+    Called every scrape interval.
+    Must return np.ndarray of shape [N] where N = len(tickers).
+    """
+    import numpy as np
+    result = []
+    for ticker in tickers:
+        # Your custom logic here
+        result.append(0.0)
+    return np.array(result, dtype=np.float64)`;
+
+    const GLOBAL_TEMPLATE = `def fetch() -> float:
+    """
+    Called every scrape interval.
+    Returns a single float scalar.
+    """
+    # Your custom logic here
+    return 0.0`;
+
+    // ── Tab switching ─────────────────────────────────────
+    function switchTab(tabId) {
+        document.querySelectorAll('.tab-bar .tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        document.querySelector(`.tab[data-tab="${tabId}"]`).classList.add('active');
+        document.getElementById('tab-' + tabId).classList.add('active');
+        // Refresh CodeMirror when strategy tab shown
+        if (tabId === 'strategyCode' && strategyEditor) {
+            setTimeout(() => strategyEditor.refresh(), 10);
+        }
+        // Refresh custom data editors
+        if (tabId === 'customData') {
+            setTimeout(() => customEditors.forEach(c => c.editor.refresh()), 10);
+        }
+    }
+
+    // ── Data Config (Tab 1) ───────────────────────────────
+    function renderFieldGrid(config) {
+        const grid = document.getElementById('fieldGrid');
+        const fields = (config && config.fields) || {};
+        const isCrypto = isCryptoSession();
+
+        grid.innerHTML = ALL_FIELDS.map(f => {
+            const cfg = fields[f.name] || {};
+            const enabled = cfg.enabled || false;
+            const lookback = cfg.lookback || f.defaultLookback;
+            const hidden = f.cryptoOnly && !isCrypto;
+            if (hidden) return '';
+            return `
+                <div class="field-item ${enabled ? '' : 'disabled'}" id="fi-${f.name}">
+                    <input type="checkbox" ${enabled ? 'checked' : ''} onchange="toggleField('${f.name}', this.checked)">
+                    <span class="f-name">${f.label}</span>
+                    ${f.cryptoOnly ? '<span class="f-tag">crypto</span>' : ''}
+                    <input type="number" class="f-lookback" value="${lookback}" min="1" max="500"
+                        data-field="${f.name}" onchange="updateFieldLookback('${f.name}', this.value)">
+                </div>`;
+        }).join('');
+    }
+
+    function toggleField(name, enabled) {
+        const item = document.getElementById('fi-' + name);
+        item.classList.toggle('disabled', !enabled);
+        if (!dataConfig.fields) dataConfig.fields = {};
+        if (!dataConfig.fields[name]) dataConfig.fields[name] = { enabled: false, lookback: 10 };
+        dataConfig.fields[name].enabled = enabled;
+    }
+
+    function updateFieldLookback(name, val) {
+        if (!dataConfig.fields) dataConfig.fields = {};
+        if (!dataConfig.fields[name]) dataConfig.fields[name] = { enabled: false, lookback: 10 };
+        dataConfig.fields[name].lookback = parseInt(val) || 1;
+    }
+
+    function updateEffective() {
+        const res = document.getElementById('dcResolution').value;
+        const n = parseInt(document.getElementById('dcExecEveryN').value) || 1;
+        const secMap = { '1min': 60, '5min': 300, '15min': 900, '30min': 1800, '60min': 3600, '1day': 86400 };
+        const totalSec = (secMap[res] || 60) * n;
+        let label;
+        if (totalSec < 3600) label = `= ${totalSec / 60}min`;
+        else if (totalSec < 86400) label = `= ${totalSec / 3600}h`;
+        else label = `= ${totalSec / 86400}d`;
+        document.getElementById('dcEffective').textContent = label;
+    }
+
+    document.addEventListener('change', e => {
+        if (e.target.id === 'dcResolution' || e.target.id === 'dcExecEveryN') updateEffective();
+    });
+
+    function isCryptoSession() {
+        // Check current session type from sidebar
+        const item = document.querySelector(`.session-item.active`);
+        if (!item) return true;
+        const typeBadge = item.querySelector('.s-type');
+        if (!typeBadge) return true;
+        return typeBadge.textContent.trim() === 'SIM'
+            ? item.querySelector('.s-meta').textContent.includes('binance')
+            : typeBadge.classList.contains('sim') || true;  // default show all
+    }
+
+    function getDataConfigFromUI() {
+        const config = {
+            resolution: document.getElementById('dcResolution').value,
+            exec_every_n: parseInt(document.getElementById('dcExecEveryN').value) || 1,
+            fields: {},
+            custom_data: [],
+            custom_global_data: [],
+        };
+        ALL_FIELDS.forEach(f => {
+            const item = document.getElementById('fi-' + f.name);
+            if (!item) return;
+            const checkbox = item.querySelector('input[type="checkbox"]');
+            const lookbackInput = item.querySelector('.f-lookback');
+            config.fields[f.name] = {
+                enabled: checkbox.checked,
+                lookback: parseInt(lookbackInput.value) || 0,
+            };
+        });
+        // Custom data from data config's custom_data / custom_global_data (names + lookbacks)
+        customEditors.forEach(c => {
+            const entry = { name: c.name, lookback: c.lookback || 5 };
+            if (c.type === 'global') {
+                config.custom_global_data.push(entry);
+            } else {
+                config.custom_data.push(entry);
+            }
+        });
+        return config;
+    }
+
+    // ── Custom Data (Tab 2) ───────────────────────────────
+    function addCustomDataBlock(name, type, code, lookback) {
+        name = name || '';
+        type = type || 'per_stock';
+        code = code || (type === 'global' ? GLOBAL_TEMPLATE : PER_STOCK_TEMPLATE);
+        lookback = lookback || 5;
+
+        const container = document.getElementById('customDataBlocks');
+        const idx = customEditors.length;
+        const block = document.createElement('div');
+        block.className = 'cd-block';
+        block.innerHTML = `
+            <div class="cd-header">
+                <input type="text" placeholder="Data name (e.g. put_call_ratio)" value="${name}" data-idx="${idx}" class="cd-name">
+                <select data-idx="${idx}" class="cd-type">
+                    <option value="per_stock" ${type === 'per_stock' ? 'selected' : ''}>Per-Stock</option>
+                    <option value="global" ${type === 'global' ? 'selected' : ''}>Global</option>
+                </select>
+                <label style="font-size:11px;color:#8b949e;">Lookback:</label>
+                <input type="number" value="${lookback}" min="1" max="500" style="width:55px;padding:4px 6px;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#e1e4e8;font-size:12px;" data-idx="${idx}" class="cd-lookback">
+                <button class="cd-remove" onclick="removeCustomDataBlock(${idx})" title="Remove">&times;</button>
+            </div>
+            <div class="cd-editor" id="cd-editor-${idx}"></div>
+        `;
+        container.appendChild(block);
+
+        const textarea = document.createElement('textarea');
+        block.querySelector('.cd-editor').appendChild(textarea);
+        const editor = CodeMirror.fromTextArea(textarea, {
             mode: 'python',
             theme: 'material-darker',
             lineNumbers: true,
@@ -147,8 +404,53 @@ async def on_bar(self, bar: OHLCVBar, extra_data=None) -> TradeSignal | None</pr
             indentWithTabs: false,
             extraKeys: { Tab: (cm) => cm.replaceSelection('    ', 'end') }
         });
-        await loadStrategy();
-        updateEditorLabel();
+        editor.setValue(code);
+
+        customEditors.push({ name, type, code, lookback, editor, element: block, idx });
+    }
+
+    function removeCustomDataBlock(idx) {
+        const entry = customEditors.find(c => c.idx === idx);
+        if (entry) {
+            entry.element.remove();
+            customEditors = customEditors.filter(c => c.idx !== idx);
+        }
+    }
+
+    function getCustomDataCode() {
+        return customEditors.map(c => ({
+            name: c.element.querySelector('.cd-name').value.trim(),
+            type: c.element.querySelector('.cd-type').value,
+            code: c.editor.getValue(),
+            lookback: parseInt(c.element.querySelector('.cd-lookback').value) || 5,
+        }));
+    }
+
+    // ── Strategy Code (Tab 3) ─────────────────────────────
+    function initStrategyEditor() {
+        strategyEditor = CodeMirror.fromTextArea(document.getElementById('codeEditor'), {
+            mode: 'python',
+            theme: 'material-darker',
+            lineNumbers: true,
+            indentUnit: 4,
+            tabSize: 4,
+            indentWithTabs: false,
+            extraKeys: { Tab: (cm) => cm.replaceSelection('    ', 'end') }
+        });
+    }
+
+    // ── Status & Feedback ─────────────────────────────────
+    function setStatus(text, cls) {
+        const badge = document.getElementById('statusBadge');
+        badge.textContent = text;
+        badge.className = 'status ' + cls;
+    }
+
+    function showFeedback(lines) {
+        const fb = document.getElementById('feedback');
+        if (!lines || lines.length === 0) { fb.style.display = 'none'; return; }
+        fb.style.display = 'block';
+        fb.innerHTML = lines.join('');
     }
 
     function updateEditorLabel() {
@@ -163,65 +465,121 @@ async def on_bar(self, bar: OHLCVBar, extra_data=None) -> TradeSignal | None</pr
         }
     }
 
-    function setStatus(text, cls) {
-        const badge = document.getElementById('statusBadge');
-        badge.textContent = text;
-        badge.className = 'status ' + cls;
-    }
-
-    function showFeedback(lines) {
-        const fb = document.getElementById('feedback');
-        if (lines.length === 0) { fb.style.display = 'none'; return; }
-        fb.style.display = 'block';
-        fb.innerHTML = lines.join('');
-    }
-
-    async function loadStrategy() {
+    // ── Load all data from backend ────────────────────────
+    async function loadEditorData() {
         try {
             const q = getSessionParam();
             const res = await fetch('/editor/api/load' + q);
             const data = await res.json();
-            editor.setValue(data.code || '');
-            const src = data.source === 'session' ? 'Session strategy' : data.source === 'user' ? 'User strategy' : 'Default strategy';
+
+            // Strategy code
+            strategyEditor.setValue(data.strategy_code || '');
+
+            // Data config
+            dataConfig = data.data_config || {};
+            document.getElementById('dcResolution').value = dataConfig.resolution || '1min';
+            document.getElementById('dcExecEveryN').value = dataConfig.exec_every_n || 1;
+            renderFieldGrid(dataConfig);
+            updateEffective();
+
+            // Custom data functions
+            document.getElementById('customDataBlocks').innerHTML = '';
+            customEditors = [];
+            const customs = data.custom_data_code || [];
+            customs.forEach(c => {
+                addCustomDataBlock(c.name, c.type, c.code, c.lookback);
+            });
+
+            const src = data.source === 'session' ? 'Session data' : 'Default config';
             setStatus(src + ' loaded', 'idle');
         } catch(e) {
             console.error('Load error:', e);
+            setStatus('Load error', 'err');
         }
     }
 
-    async function validateCode() {
+    // ── Validate ──────────────────────────────────────────
+    async function validateAll() {
         setStatus('Validating...', 'idle');
-        const code = editor.getValue();
+        const lines = [];
+        let hasErrors = false;
+
+        // 1. Validate strategy code
+        const code = strategyEditor.getValue();
+        const dcFromUI = getDataConfigFromUI();
         try {
             const res = await fetch('/editor/api/validate', {
-                method: 'POST', headers: {'Content-Type':'application/json'},
-                body: JSON.stringify({ code })
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ code, data_config: dcFromUI })
             });
             const data = await res.json();
-            const lines = [];
             if (data.valid) {
-                lines.push(`<div class="ok-line">&#10003; Valid — class "${data.class_name}" passes all checks</div>`);
-                setStatus('Valid', 'ok');
+                lines.push('<div class="ok-line">&#10003; Strategy code is valid</div>');
             } else {
-                setStatus('Errors found', 'err');
+                hasErrors = true;
+                data.errors.forEach(e => lines.push(`<div class="err-line">&#10007; Strategy: ${e}</div>`));
             }
-            (data.errors||[]).forEach(e => lines.push(`<div class="err-line">&#10007; ${e}</div>`));
-            (data.warnings||[]).forEach(w => lines.push(`<div class="warn-line">&#9888; ${w}</div>`));
-            showFeedback(lines);
+            (data.warnings || []).forEach(w => lines.push(`<div class="warn-line">&#9888; ${w}</div>`));
         } catch(e) {
-            setStatus('Error', 'err');
-            showFeedback([`<div class="err-line">Network error: ${e.message}</div>`]);
+            hasErrors = true;
+            lines.push(`<div class="err-line">&#10007; Strategy validation failed: ${e.message}</div>`);
         }
+
+        // 2. Validate custom data functions
+        const customs = getCustomDataCode();
+        for (const c of customs) {
+            if (!c.code.trim() || !c.name) continue;
+            try {
+                const res = await fetch('/editor/api/validate-custom', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ code: c.code, type: c.type })
+                });
+                const data = await res.json();
+                if (data.valid) {
+                    lines.push(`<div class="ok-line">&#10003; Custom "${c.name}" is valid</div>`);
+                } else {
+                    hasErrors = true;
+                    data.errors.forEach(e => lines.push(`<div class="err-line">&#10007; Custom "${c.name}": ${e}</div>`));
+                }
+            } catch(e) {
+                hasErrors = true;
+                lines.push(`<div class="err-line">&#10007; Custom "${c.name}" validation failed</div>`);
+            }
+        }
+
+        // 3. Data config sanity check
+        const enabledFields = Object.entries(dcFromUI.fields).filter(([k, v]) => v.enabled);
+        if (enabledFields.length === 0) {
+            hasErrors = true;
+            lines.push('<div class="err-line">&#10007; Data Config: must enable at least one field</div>');
+        }
+
+        setStatus(hasErrors ? 'Errors found' : 'All valid', hasErrors ? 'err' : 'ok');
+        showFeedback(lines);
     }
 
-    async function deployCode() {
+    // ── Deploy ────────────────────────────────────────────
+    async function deployAll() {
+        if (!currentSessionId) {
+            showFeedback(['<div class="err-line">&#10007; Select a session first</div>']);
+            setStatus('No session', 'err');
+            return;
+        }
         setStatus('Deploying...', 'idle');
-        const code = editor.getValue();
-        const q = getSessionParam();
+        const code = strategyEditor.getValue();
+        const dcFromUI = getDataConfigFromUI();
+        const customs = getCustomDataCode();
+
         try {
+            const q = getSessionParam();
             const res = await fetch('/editor/api/deploy' + q, {
-                method: 'POST', headers: {'Content-Type':'application/json'},
-                body: JSON.stringify({ code, session_id: currentSessionId })
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    strategy_code: code,
+                    data_config: dcFromUI,
+                    custom_data_code: customs,
+                    session_id: currentSessionId,
+                })
             });
             const data = await res.json();
             const lines = [];
@@ -230,7 +588,7 @@ async def on_bar(self, bar: OHLCVBar, extra_data=None) -> TradeSignal | None</pr
                 setStatus('Deployed', 'ok');
             } else {
                 setStatus('Deploy failed', 'err');
-                (data.errors||[]).forEach(e => lines.push(`<div class="err-line">&#10007; ${e}</div>`));
+                (data.errors || []).forEach(e => lines.push(`<div class="err-line">&#10007; ${e}</div>`));
             }
             showFeedback(lines);
         } catch(e) {
@@ -239,13 +597,22 @@ async def on_bar(self, bar: OHLCVBar, extra_data=None) -> TradeSignal | None</pr
         }
     }
 
-    async function resetCode() {
+    // ── Reset ─────────────────────────────────────────────
+    async function resetAll() {
+        if (!confirm('Reset everything to default? This will overwrite your current edits.')) return;
         try {
             const res = await fetch('/editor/api/reset', { method: 'POST' });
             const data = await res.json();
-            editor.setValue(data.code || '');
+            strategyEditor.setValue(data.strategy_code || '');
+            dataConfig = data.data_config || {};
+            document.getElementById('dcResolution').value = dataConfig.resolution || '1min';
+            document.getElementById('dcExecEveryN').value = dataConfig.exec_every_n || 1;
+            renderFieldGrid(dataConfig);
+            updateEffective();
+            document.getElementById('customDataBlocks').innerHTML = '';
+            customEditors = [];
             setStatus('Reset to default', 'idle');
-            showFeedback([`<div class="ok-line">&#10003; Default strategy loaded</div>`]);
+            showFeedback(['<div class="ok-line">&#10003; Default config loaded</div>']);
         } catch(e) {
             showFeedback([`<div class="err-line">Error: ${e.message}</div>`]);
         }
@@ -254,9 +621,12 @@ async def on_bar(self, bar: OHLCVBar, extra_data=None) -> TradeSignal | None</pr
     // Called by base.html when session changes
     function onSessionChange(sessionId) {
         updateEditorLabel();
-        loadStrategy();
+        loadEditorData();
     }
 
-    init();
+    // ── Init ──────────────────────────────────────────────
+    initStrategyEditor();
+    loadEditorData();
+    updateEditorLabel();
 </script>
 {% endblock %}
