@@ -389,18 +389,19 @@ class SessionManager:
         pipeline.collector = collector
         pipeline.running = True
 
-        # Start tasks
+        # Start tasks — pass lambda factories so _run_with_restart can create
+        # a fresh coroutine on each retry (coroutine objects are single-use).
         pipeline.tasks = [
             asyncio.create_task(
-                self._run_with_restart(sid, "collector", collector.start()),
+                self._run_with_restart(sid, "collector", lambda: collector.start()),
                 name=f"session_{sid}_collector",
             ),
             asyncio.create_task(
-                self._run_with_restart(sid, "router", router.start()),
+                self._run_with_restart(sid, "router", lambda: router.start()),
                 name=f"session_{sid}_router",
             ),
             asyncio.create_task(
-                self._run_with_restart(sid, "portfolio", tracker.start()),
+                self._run_with_restart(sid, "portfolio", lambda: tracker.start()),
                 name=f"session_{sid}_portfolio",
             ),
         ]
@@ -408,7 +409,7 @@ class SessionManager:
         if pipeline.sim_adapter:
             pipeline.tasks.append(
                 asyncio.create_task(
-                    self._run_with_restart(sid, "sim_price", sim_adapter.start_price_listener()),
+                    self._run_with_restart(sid, "sim_price", lambda: sim_adapter.start_price_listener()),
                     name=f"session_{sid}_sim_price",
                 )
             )
@@ -531,11 +532,17 @@ class SessionManager:
 
         return cfg
 
-    async def _run_with_restart(self, session_id: str, component: str, coro) -> None:
-        """Run a coroutine with auto-restart on failure."""
+    async def _run_with_restart(self, session_id: str, component: str, coro_factory) -> None:
+        """Run a coroutine with auto-restart on failure.
+
+        Args:
+            coro_factory: A zero-arg callable that returns a NEW coroutine each time.
+                          Coroutine objects can only be awaited once, so we need a
+                          factory to create a fresh one for each retry attempt.
+        """
         for attempt in range(1, MAX_RESTART_ATTEMPTS + 1):
             try:
-                await coro
+                await coro_factory()
                 return
             except asyncio.CancelledError:
                 return
