@@ -165,6 +165,11 @@ def create_app(config: dict) -> FastAPI:
     from monitoring.backtest import create_backtest_router
     app.include_router(create_backtest_router(config, redis_proxy, templates, sm_proxy))
 
+    # ── Logs ──────────────────────────────────────────────────────────
+
+    from monitoring.logs import create_logs_router
+    app.include_router(create_logs_router(config, redis_proxy, templates, sm_proxy))
+
     # ── Sessions API ─────────────────────────────────────────────────
 
     from monitoring.sessions import create_sessions_router

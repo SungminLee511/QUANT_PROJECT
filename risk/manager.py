@@ -5,7 +5,7 @@ import logging
 
 from shared.enums import Exchange, OrderType, Side
 from shared.redis_client import RedisClient
-from shared.schemas import AlertMessage, OrderRequest, RiskCheckResult, TradeSignal
+from shared.schemas import AlertMessage, LogEntry, OrderRequest, RiskCheckResult, TradeSignal
 from risk.kill_switch import KillSwitch
 from risk.limits import (
     check_daily_loss,
@@ -34,6 +34,7 @@ class RiskManager:
         self._signal_channel = channels.get("signals", "strategy:signals")
         self._order_channel = channels.get("orders", "execution:orders")
         self._alert_channel = channels.get("alerts", "monitoring:alerts")
+        self._logs_channel = channels.get("logs", "")
 
         # Portfolio state cache — updated by portfolio tracker via Redis
         self._portfolio_state: dict = {
@@ -75,18 +76,25 @@ class RiskManager:
             if result.approved:
                 order = self._signal_to_order(signal)
                 await self._redis.publish(self._order_channel, order)
+                await self._publish_log(
+                    "risk_approve", signal.symbol,
+                    f"APPROVED {signal.signal.value.upper()} {signal.symbol} → order qty={order.quantity:.6f}",
+                    metadata={"signal": signal.signal.value, "quantity": order.quantity},
+                )
                 logger.info(
                     "Signal APPROVED: %s %s from %s",
-                    signal.signal.value,
-                    signal.symbol,
-                    signal.strategy_id,
+                    signal.signal.value, signal.symbol, signal.strategy_id,
                 )
             else:
+                await self._publish_log(
+                    "risk_reject", signal.symbol,
+                    f"REJECTED {signal.signal.value.upper()} {signal.symbol} — {result.reason}",
+                    level="warning",
+                    metadata={"signal": signal.signal.value, "reason": result.reason},
+                )
                 logger.warning(
                     "Signal REJECTED: %s %s — %s",
-                    signal.signal.value,
-                    signal.symbol,
-                    result.reason,
+                    signal.signal.value, signal.symbol, result.reason,
                 )
                 await self._redis.publish(
                     self._alert_channel,
@@ -103,6 +111,20 @@ class RiskManager:
 
         except Exception:
             logger.exception("Error processing signal")
+
+    async def _publish_log(self, event_type: str, symbol: str, message: str,
+                          level: str = "info", metadata: dict | None = None) -> None:
+        if not self._logs_channel:
+            return
+        try:
+            entry = LogEntry(
+                event_type=event_type, session_id=self._session_id,
+                symbol=symbol, message=message, level=level,
+                source="risk", metadata=metadata or {},
+            )
+            await self._redis.publish(self._logs_channel, entry)
+        except Exception:
+            pass
 
     async def _check_all(self, signal: TradeSignal) -> RiskCheckResult:
         """Run all risk checks sequentially."""

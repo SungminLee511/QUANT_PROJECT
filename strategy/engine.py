@@ -6,7 +6,7 @@ import logging
 
 from shared.enums import Signal
 from shared.redis_client import RedisClient
-from shared.schemas import MarketTick, OHLCVBar, TradeSignal
+from shared.schemas import LogEntry, MarketTick, OHLCVBar, TradeSignal
 from strategy.base import BaseStrategy
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,7 @@ class StrategyEngine:
         channels = config.get("redis", {}).get("channels", {})
         self._market_channel = channels.get("market_data", "market:ticks")
         self._signal_channel = channels.get("signals", "strategy:signals")
+        self._logs_channel = channels.get("logs", "")
 
     def _load_strategy(self) -> BaseStrategy:
         """Dynamically import and instantiate the strategy from config."""
@@ -120,37 +121,84 @@ class StrategyEngine:
             logger.debug("Custom data fetch failed, using cached", exc_info=True)
             return self._extra_data or None
 
+    async def _publish_log(self, event_type: str, symbol: str, message: str,
+                          level: str = "info", metadata: dict | None = None) -> None:
+        """Publish a log entry to the session logs channel."""
+        if not self._logs_channel:
+            return
+        try:
+            entry = LogEntry(
+                event_type=event_type,
+                session_id=self._session_id,
+                symbol=symbol,
+                message=message,
+                level=level,
+                source="strategy",
+                metadata=metadata or {},
+            )
+            await self._redis.publish(self._logs_channel, entry)
+        except Exception:
+            pass  # Never let logging break the pipeline
+
     async def _process_tick(self, tick: MarketTick, extra_data: dict | None = None) -> None:
         for strategy in self._strategies:
             try:
                 signal = await strategy.on_tick(tick, extra_data=extra_data)
+
+                # Log every tick evaluation
                 if signal is not None and signal.signal != Signal.HOLD:
                     await self._redis.publish(self._signal_channel, signal)
+                    await self._publish_log(
+                        "signal", tick.symbol,
+                        f"{signal.signal.value.upper()} {tick.symbol} @ ${tick.price:.2f} (strength={signal.strength:.2f})",
+                        metadata={"price": tick.price, "signal": signal.signal.value, "strength": signal.strength},
+                    )
                     logger.info(
                         "Signal emitted: %s %s (strength=%.2f) from %s",
-                        signal.signal.value,
-                        signal.symbol,
-                        signal.strength,
-                        signal.strategy_id,
+                        signal.signal.value, signal.symbol, signal.strength, signal.strategy_id,
+                    )
+                else:
+                    sig_name = signal.signal.value.upper() if signal else "NONE"
+                    await self._publish_log(
+                        "tick_eval", tick.symbol,
+                        f"{sig_name} {tick.symbol} @ ${tick.price:.2f}",
+                        metadata={"price": tick.price, "signal": sig_name},
                     )
             except Exception:
-                logger.exception(
-                    "Error in strategy %s on_tick", strategy.strategy_id
+                logger.exception("Error in strategy %s on_tick", strategy.strategy_id)
+                await self._publish_log(
+                    "error", tick.symbol,
+                    f"Error in on_tick for {tick.symbol}: {strategy.strategy_id}",
+                    level="error",
                 )
 
     async def _process_bar(self, bar: OHLCVBar, extra_data: dict | None = None) -> None:
         for strategy in self._strategies:
             try:
                 signal = await strategy.on_bar(bar, extra_data=extra_data)
+
                 if signal is not None and signal.signal != Signal.HOLD:
                     await self._redis.publish(self._signal_channel, signal)
+                    await self._publish_log(
+                        "signal", bar.symbol,
+                        f"{signal.signal.value.upper()} {bar.symbol} bar close=${bar.close:.2f} (strength={signal.strength:.2f})",
+                        metadata={"close": bar.close, "signal": signal.signal.value, "strength": signal.strength},
+                    )
                     logger.info(
                         "Signal emitted (bar): %s %s from %s",
-                        signal.signal.value,
-                        signal.symbol,
-                        signal.strategy_id,
+                        signal.signal.value, signal.symbol, signal.strategy_id,
+                    )
+                else:
+                    sig_name = signal.signal.value.upper() if signal else "NONE"
+                    await self._publish_log(
+                        "tick_eval", bar.symbol,
+                        f"BAR {sig_name} {bar.symbol} close=${bar.close:.2f}",
+                        metadata={"close": bar.close, "signal": sig_name},
                     )
             except Exception:
-                logger.exception(
-                    "Error in strategy %s on_bar", strategy.strategy_id
+                logger.exception("Error in strategy %s on_bar", strategy.strategy_id)
+                await self._publish_log(
+                    "error", bar.symbol,
+                    f"Error in on_bar for {bar.symbol}: {strategy.strategy_id}",
+                    level="error",
                 )

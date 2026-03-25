@@ -52,7 +52,7 @@ QUANT_PROJECT/
 │
 ├── shared/                            # Cross-service utilities
 │   ├── enums.py                       # Exchange, Side, Signal, OrderStatus, AssetType, OrderType, SessionType
-│   ├── schemas.py                     # Pydantic v2: MarketTick, OHLCVBar, TradeSignal, OrderRequest, OrderUpdate, etc.
+│   ├── schemas.py                     # Pydantic v2: MarketTick, OHLCVBar, TradeSignal, OrderRequest, OrderUpdate, LogEntry, etc.
 │   ├── config.py                      # YAML + env var hierarchical config loader (QT_ prefix)
 │   └── redis_client.py               # Async Redis: pub/sub, flags, connection pooling, session_channel() helper
 │
@@ -107,6 +107,7 @@ QUANT_PROJECT/
 │   ├── backtest.py                    # Backtest API: run backtest, load strategy code for backtest page
 │   ├── dashboard.py                   # Dashboard API: positions, P&L, orders, equity history, kill switch
 │   ├── editor.py                      # Strategy editor API: load/save/validate/deploy (per-session or global)
+│   ├── logs.py                        # Logs page: SSE streaming, in-memory ring buffer, per-session log viewer
 │   ├── settings.py                    # Settings API: global API key management, .env read/write
 │   ├── sessions.py                    # Sessions REST API: CRUD + start/stop endpoints
 │   ├── logger.py                      # structlog: JSON (prod) or console (dev) output
@@ -116,6 +117,7 @@ QUANT_PROJECT/
 │       ├── backtest.html             # Backtest page: config form, code editor, equity chart, metrics, trade log
 │       ├── dashboard.html            # Main dashboard (extends base.html): equity curve, positions, orders
 │       ├── editor.html               # Code editor (extends base.html): CodeMirror, per-session deploy
+│       ├── logs.html                 # Logs page (extends base.html): real-time monospace log viewer with SSE
 │       └── settings.html             # Global API keys (extends base.html): Binance/Alpaca config
 │
 ├── db/                                # Database layer
@@ -175,6 +177,7 @@ All pages (except login) share a common layout:
 | `/` | Dashboard | Equity curve, positions, orders, P&L, kill switch — scoped by ?session_id |
 | `/editor` | Strategy Editor | In-browser Python editor — per-session strategy storage via DB |
 | `/backtest` | Backtest | Run backtests: config form, CodeMirror editor, equity chart, metrics, trade log |
+| `/logs` | Logs | Real-time session activity log: tick evals, signals, risk decisions, order fills, session events |
 | `/settings` | Settings | Global API key config (Binance/Alpaca), testnet/paper toggles |
 
 ### Session Management UI
@@ -379,6 +382,7 @@ Example for session `abc123`:
 - `session:abc123:risk:kill_switch`
 - `session:abc123:portfolio:state`
 - `session:abc123:strategy:reload`
+- `session:abc123:logs`
 
 ---
 

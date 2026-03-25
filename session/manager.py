@@ -15,6 +15,7 @@ from db.models import TradingSession
 from db.session import get_session
 from shared.enums import Exchange, SessionType
 from shared.redis_client import RedisClient, session_channel
+from shared.schemas import LogEntry
 from strategy.base import BaseStrategy
 from strategy.engine import StrategyEngine
 from risk.manager import RiskManager
@@ -193,11 +194,17 @@ class SessionManager:
             await self._start_pipeline(pipeline, config_data, symbols, starting_budget)
             # Update DB status
             await self._set_session_status(session_id, "active")
+            await self._publish_log(
+                session_id, "session_event",
+                f"Session started (type={session_type.value}, symbols={symbols})",
+                metadata={"symbols": symbols, "type": session_type.value, "budget": starting_budget},
+            )
             logger.info("Session %s started (type=%s, symbols=%s)", session_id, session_type.value, symbols)
             return True
         except Exception:
             logger.exception("Failed to start session %s", session_id)
             await self._set_session_status(session_id, "error")
+            await self._publish_log(session_id, "session_event", "Session failed to start", level="error")
             return False
 
     async def stop_session(self, session_id: str) -> bool:
@@ -226,6 +233,7 @@ class SessionManager:
 
         del self._pipelines[session_id]
         await self._set_session_status(session_id, "stopped")
+        await self._publish_log(session_id, "session_event", "Session stopped")
         logger.info("Session %s stopped", session_id)
         return True
 
@@ -372,6 +380,7 @@ class SessionManager:
             "orders": session_channel(session_id, "execution:orders"),
             "order_updates": session_channel(session_id, "execution:updates"),
             "alerts": session_channel(session_id, "monitoring:alerts"),
+            "logs": session_channel(session_id, "logs"),
         }
 
         # Override risk keys
@@ -410,6 +419,33 @@ class SessionManager:
                         session_id, component,
                     )
                     await self._set_session_status(session_id, "error")
+                    await self._publish_log(
+                        session_id, "session_event",
+                        f"Component '{component}' crashed after {MAX_RESTART_ATTEMPTS} retries",
+                        level="error",
+                    )
+
+    # ── Logging helper ─────────────────────────────────────────────
+
+    async def _publish_log(
+        self, session_id: str, event_type: str, message: str,
+        level: str = "info", symbol: str = "", metadata: dict | None = None,
+    ) -> None:
+        """Publish a LogEntry to the session's logs channel."""
+        try:
+            entry = LogEntry(
+                event_type=event_type,
+                session_id=session_id,
+                symbol=symbol,
+                message=message,
+                level=level,
+                source="session",
+                metadata=metadata or {},
+            )
+            channel = session_channel(session_id, "logs")
+            await self._redis.publish(channel, entry)
+        except Exception:
+            logger.debug("Failed to publish session log", exc_info=True)
 
     # ── Helpers ──────────────────────────────────────────────────────
 

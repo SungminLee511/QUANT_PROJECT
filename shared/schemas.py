@@ -105,3 +105,20 @@ class AlertMessage(BaseModel):
     timestamp: datetime = Field(default_factory=_utcnow)
     session_id: str = ""
     metadata: dict = Field(default_factory=dict)
+
+
+class LogEntry(BaseModel):
+    """Structured log entry for the Logs page.
+
+    Published to session:{id}:logs Redis channel by all pipeline components.
+    Stored in-memory ring buffer on the web server, streamed to browser via SSE.
+    """
+
+    event_type: str  # tick_eval, signal, order_fill, risk_approve, risk_reject, session_event, error
+    session_id: str = ""
+    symbol: str = ""
+    message: str = ""
+    level: str = "info"  # info, warning, error
+    source: str = ""     # strategy, risk, execution, session, data
+    metadata: dict = Field(default_factory=dict)
+    timestamp: datetime = Field(default_factory=_utcnow)

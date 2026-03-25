@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+
+{% block title %}Logs — Quant Trader{% endblock %}
+
+{% block extra_styles %}
+.logs-container { display: flex; flex-direction: column; height: calc(100vh - 52px); }
+.logs-toolbar { background: #161b22; border-bottom: 1px solid #30363d; padding: 8px 24px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.logs-toolbar .status { font-size: 12px; padding: 4px 10px; border-radius: 4px; }
+.logs-toolbar .status.connected { background: #23863622; color: #3fb950; border: 1px solid #23863644; }
+.logs-toolbar .status.disconnected { background: #da363322; color: #f85149; border: 1px solid #da363344; }
+.logs-toolbar .spacer { flex: 1; }
+.logs-toolbar .btn { padding: 5px 12px; border: 1px solid #30363d; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; background: #21262d; color: #e1e4e8; }
+.logs-toolbar .btn:hover { background: #30363d; }
+.logs-toolbar .btn.active { background: #238636; border-color: #238636; color: white; }
+.logs-toolbar .count { font-size: 12px; color: #484f58; }
+.session-banner { padding: 8px 24px; background: #1c2129; border-bottom: 1px solid #21262d; font-size: 13px; color: #8b949e; display: flex; align-items: center; gap: 8px; }
+.session-banner .name { color: #e1e4e8; font-weight: 600; }
+
+.log-viewport { flex: 1; overflow-y: auto; background: #0d1117; font-family: 'SF Mono', Monaco, Consolas, 'Liberation Mono', monospace; font-size: 12px; line-height: 1.6; padding: 8px 0; }
+
+.log-entry { padding: 1px 24px; display: flex; gap: 10px; white-space: nowrap; }
+.log-entry:hover { background: #161b22; }
+.log-entry .ts { color: #484f58; min-width: 80px; }
+.log-entry .src { min-width: 72px; font-weight: 600; }
+.log-entry .sym { color: #d2a8ff; min-width: 90px; }
+.log-entry .msg { color: #e1e4e8; white-space: pre-wrap; word-break: break-all; }
+
+/* Source colors */
+.log-entry .src.strategy { color: #79c0ff; }
+.log-entry .src.risk { color: #d29922; }
+.log-entry .src.execution { color: #3fb950; }
+.log-entry .src.session { color: #bc8cff; }
+.log-entry .src.data { color: #8b949e; }
+
+/* Event type styling */
+.log-entry.signal .msg { color: #58a6ff; font-weight: 600; }
+.log-entry.order_fill .msg { color: #3fb950; font-weight: 600; }
+.log-entry.risk_reject .msg { color: #f85149; }
+.log-entry.risk_approve .msg { color: #3fb950; }
+.log-entry.error .msg { color: #f85149; font-weight: 600; }
+.log-entry.session_event .msg { color: #bc8cff; font-style: italic; }
+.log-entry.tick_eval .msg { color: #8b949e; }
+
+.log-empty { padding: 40px; text-align: center; color: #484f58; font-style: italic; font-family: -apple-system, sans-serif; }
+{% endblock %}
+
+{% block content %}
+<div class="logs-container">
+    <div id="sessionBanner" class="session-banner" style="display:none;">
+        Viewing: <span class="name" id="bannerName"></span>
+    </div>
+    <div class="logs-toolbar">
+        <span id="sseStatus" class="status disconnected">Disconnected</span>
+        <span id="logCount" class="count">0 entries</span>
+        <div class="spacer"></div>
+        <button class="btn active" id="autoScrollBtn" onclick="toggleAutoScroll()">Auto-scroll</button>
+        <button class="btn" onclick="clearLogs()">Clear</button>
+    </div>
+    <div class="log-viewport" id="logViewport">
+        <div class="log-empty" id="logEmpty">Waiting for log entries... Start a session to see activity here.</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let autoScroll = true;
+    let entryCount = 0;
+    let evtSource = null;
+    const MAX_DOM_ENTRIES = 5000;
+
+    const viewport = document.getElementById('logViewport');
+    const emptyMsg = document.getElementById('logEmpty');
+    const countEl = document.getElementById('logCount');
+    const statusEl = document.getElementById('sseStatus');
+
+    function fmtTime(isoStr) {
+        try {
+            const d = new Date(isoStr);
+            return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                   + '.' + String(d.getMilliseconds()).padStart(3, '0');
+        } catch { return '??:??:??.???'; }
+    }
+
+    function createEntryEl(entry) {
+        const div = document.createElement('div');
+        const evtType = entry.event_type || 'info';
+        div.className = 'log-entry ' + evtType;
+        div.innerHTML =
+            `<span class="ts">${fmtTime(entry.timestamp)}</span>` +
+            `<span class="src ${entry.source || ''}">${(entry.source || '???').toUpperCase().padEnd(9)}</span>` +
+            `<span class="sym">${entry.symbol || ''}</span>` +
+            `<span class="msg">${escHtml(entry.message || '')}</span>`;
+        return div;
+    }
+
+    function escHtml(s) {
+        return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function appendEntry(entry) {
+        if (emptyMsg.style.display !== 'none') emptyMsg.style.display = 'none';
+        const el = createEntryEl(entry);
+        viewport.appendChild(el);
+        entryCount++;
+
+        // Cap DOM size
+        while (viewport.children.length > MAX_DOM_ENTRIES + 1) {
+            viewport.removeChild(viewport.children[1]); // [0] is the empty msg
+        }
+
+        countEl.textContent = entryCount.toLocaleString() + ' entries';
+        if (autoScroll) viewport.scrollTop = viewport.scrollHeight;
+    }
+
+    function clearLogs() {
+        // Remove all log entries but keep empty msg
+        while (viewport.children.length > 1) {
+            viewport.removeChild(viewport.lastChild);
+        }
+        emptyMsg.style.display = 'block';
+        entryCount = 0;
+        countEl.textContent = '0 entries';
+    }
+
+    function toggleAutoScroll() {
+        autoScroll = !autoScroll;
+        const btn = document.getElementById('autoScrollBtn');
+        btn.classList.toggle('active', autoScroll);
+        if (autoScroll) viewport.scrollTop = viewport.scrollHeight;
+    }
+
+    // Auto-detect scroll: if user scrolls up, pause auto-scroll
+    viewport.addEventListener('scroll', () => {
+        const atBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 50;
+        if (!atBottom && autoScroll) {
+            autoScroll = false;
+            document.getElementById('autoScrollBtn').classList.remove('active');
+        } else if (atBottom && !autoScroll) {
+            autoScroll = true;
+            document.getElementById('autoScrollBtn').classList.add('active');
+        }
+    });
+
+    function updateBanner() {
+        const banner = document.getElementById('sessionBanner');
+        if (currentSessionId) {
+            const item = document.querySelector(`.session-item[data-id="${currentSessionId}"] .s-name`);
+            const name = item ? item.firstChild.textContent.trim() : currentSessionId;
+            document.getElementById('bannerName').textContent = name;
+            banner.style.display = 'flex';
+        } else {
+            banner.style.display = 'none';
+        }
+    }
+
+    // ── SSE connection ──
+    function connectSSE() {
+        if (evtSource) { evtSource.close(); }
+        const q = currentSessionId ? `?session_id=${currentSessionId}` : '';
+        evtSource = new EventSource('/logs/api/stream' + q);
+
+        evtSource.onopen = () => {
+            statusEl.textContent = 'Connected';
+            statusEl.className = 'status connected';
+        };
+        evtSource.onerror = () => {
+            statusEl.textContent = 'Disconnected';
+            statusEl.className = 'status disconnected';
+        };
+        evtSource.onmessage = (e) => {
+            try {
+                const entry = JSON.parse(e.data);
+                appendEntry(entry);
+            } catch {}
+        };
+    }
+
+    // ── Initial load ──
+    async function loadExisting() {
+        const q = currentSessionId ? `?session_id=${currentSessionId}` : '';
+        try {
+            const res = await fetch('/logs/api/entries' + q);
+            const data = await res.json();
+            (data.entries || []).forEach(appendEntry);
+        } catch(e) { console.error('Failed to load existing logs:', e); }
+    }
+
+    // ── Session change handler (called by base.html) ──
+    function onSessionChange(sessionId) {
+        updateBanner();
+        clearLogs();
+        connectSSE();
+        loadExisting();
+    }
+
+    // ── Init ──
+    updateBanner();
+    loadExisting().then(connectSSE);
+</script>
+{% endblock %}

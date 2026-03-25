@@ -10,7 +10,7 @@ from execution.base_adapter import BaseExchangeAdapter
 from execution.order import OrderState
 from shared.enums import Exchange, OrderStatus
 from shared.redis_client import RedisClient
-from shared.schemas import OrderRequest, OrderUpdate
+from shared.schemas import LogEntry, OrderRequest, OrderUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,7 @@ class OrderRouter:
         channels = config.get("redis", {}).get("channels", {})
         self._order_channel = channels.get("orders", "execution:orders")
         self._update_channel = channels.get("order_updates", "execution:updates")
+        self._logs_channel = channels.get("logs", "")
 
     async def start(self) -> None:
         """Connect adapters, subscribe to orders, start polling."""
@@ -135,8 +136,32 @@ class OrderRouter:
             )
             await self._redis.publish(self._update_channel, update)
 
+            # Log the fill
+            await self._publish_log(
+                "order_fill", request.symbol,
+                f"FILLED {request.side.value.upper()} {request.symbol} qty={order.filled_quantity:.6f} @ ${order.avg_price:.2f}",
+                metadata={
+                    "side": request.side.value, "quantity": order.filled_quantity,
+                    "price": order.avg_price, "order_id": order_id,
+                },
+            )
+
         except Exception:
             logger.exception("Error processing order request (session=%s)", self._session_id)
+
+    async def _publish_log(self, event_type: str, symbol: str, message: str,
+                          level: str = "info", metadata: dict | None = None) -> None:
+        if not self._logs_channel:
+            return
+        try:
+            entry = LogEntry(
+                event_type=event_type, session_id=self._session_id,
+                symbol=symbol, message=message, level=level,
+                source="execution", metadata=metadata or {},
+            )
+            await self._redis.publish(self._logs_channel, entry)
+        except Exception:
+            pass
 
     def _get_adapter(self, exchange: Exchange):
         # If we have a sim adapter, always use it regardless of exchange
