@@ -1,4 +1,8 @@
-"""Individual risk limit checks. Each returns (approved: bool, reason: str)."""
+"""Individual risk limit checks. Each returns (approved: bool, reason: str).
+
+V1 functions (check_position_size, check_max_positions) operate on TradeSignal.
+V2 functions (check_portfolio_risk) operate on portfolio state only — no signal needed.
+"""
 
 import logging
 from typing import Any
@@ -99,4 +103,33 @@ async def check_kill_switch(redis: RedisClient, config: dict) -> tuple[bool, str
     if state and state.get("active", False):
         reason = state.get("reason", "Kill switch active")
         return False, f"Kill switch: {reason}"
+    return True, ""
+
+
+# ── V2 Weight-Based Risk Checks ──────────────────────────────────────
+
+
+def check_portfolio_risk(
+    portfolio_state: dict[str, Any],
+    config: dict,
+) -> tuple[bool, str]:
+    """Combined drawdown + daily loss check for V2 weight-based pipeline.
+
+    Called after weight normalization, before order generation.
+    If this fails, the session manager should activate the kill switch
+    and flatten all positions (zero weights).
+
+    Returns:
+        (ok, reason) — ok=True means trading can proceed.
+    """
+    # Drawdown check
+    ok, reason = check_drawdown(portfolio_state, config)
+    if not ok:
+        return False, reason
+
+    # Daily loss check
+    ok, reason = check_daily_loss(portfolio_state, config)
+    if not ok:
+        return False, reason
+
     return True, ""

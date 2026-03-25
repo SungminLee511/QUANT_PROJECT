@@ -28,6 +28,7 @@ from execution.router import OrderRouter
 from execution.sim_adapter import SimulationAdapter
 from portfolio.tracker import PortfolioTracker
 from risk.kill_switch import KillSwitch
+from risk.limits import check_portfolio_risk
 
 logger = logging.getLogger(__name__)
 
@@ -411,7 +412,7 @@ class SessionManager:
                 logger.debug("Session %s: no current prices, skipping rebalance", sid)
                 return
 
-            # Get current positions from portfolio tracker state
+            # Get portfolio state for risk checks + rebalancing
             portfolio_key = session_channel(sid, "portfolio:state")
             state = await self._redis.get_flag(portfolio_key)
 
@@ -422,7 +423,28 @@ class SessionManager:
                 for pos in state.get("positions", []):
                     current_positions[pos["symbol"]] = pos.get("quantity", 0)
 
-            # 3. Generate rebalancing orders
+            # 3. Portfolio risk checks (drawdown + daily loss)
+            risk_ok, risk_reason = check_portfolio_risk(
+                {
+                    "total_equity": total_equity,
+                    "peak_equity": state.get("peak_equity", total_equity) if state else total_equity,
+                    "day_start_equity": state.get("day_start_equity", total_equity) if state else total_equity,
+                    "daily_pnl": state.get("daily_pnl", 0) if state else 0,
+                },
+                self._config,
+            )
+            if not risk_ok:
+                # Breach → activate kill switch and flatten all positions
+                await kill_switch.activate(risk_reason)
+                weights = np.zeros(len(pipeline.executor.symbols))
+                await self._publish_log(
+                    sid, "risk_reject",
+                    f"Risk breach: {risk_reason} — flattening all positions",
+                    level="warning",
+                    metadata={"reason": risk_reason},
+                )
+
+            # 4. Generate rebalancing orders
             orders = pipeline.rebalancer.rebalance(
                 target_weights=weights,
                 current_positions=current_positions,
@@ -430,7 +452,7 @@ class SessionManager:
                 current_prices=prices,
             )
 
-            # 4. Submit orders via Redis
+            # 5. Submit orders via Redis
             if orders:
                 orders_channel = session_channel(sid, "execution:orders")
                 for order in orders:
