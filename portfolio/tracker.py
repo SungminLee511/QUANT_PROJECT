@@ -169,6 +169,11 @@ class PortfolioTracker:
                     "open_positions": sum(
                         1 for p in self._positions.values() if p["quantity"] > 0
                     ),
+                    "positions": [
+                        {"symbol": s, "quantity": p["quantity"], "avg_entry_price": p["avg_entry_price"]}
+                        for s, p in self._positions.items()
+                        if p["quantity"] > 0
+                    ],
                     "position_symbols": [
                         s for s, p in self._positions.items() if p["quantity"] > 0
                     ],
