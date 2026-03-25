@@ -1,6 +1,5 @@
 """Backtest router — run backtests from the web UI and return results."""
 
-import asyncio
 import logging
 from typing import Optional
 
@@ -96,19 +95,18 @@ def create_backtest_router(
 
         starting_cash = float(body.get("starting_cash", 10000))
         interval = body.get("interval", "1d")
-        strategy_params = body.get("strategy_params", {})
 
-        # Run backtest in a thread to avoid blocking the event loop
-        # (yfinance download is synchronous)
+        # Get data config from body or session
+        data_config = body.get("data_config")
+        if not data_config and session_id:
+            info = await session_manager.get_session_info(session_id)
+            if info and info.get("data_config"):
+                data_config = info["data_config"]
+
+        # Run backtest in a thread executor (yfinance is blocking)
         from backtest.engine import run_backtest_async
 
         try:
-            # Run the async backtest — yfinance download happens in the
-            # main thread but it's I/O bound so it's acceptable for a
-            # single-user system.  For true concurrency we'd use
-            # run_in_executor, but the strategy's on_tick/on_bar are async
-            # and need the event loop.
-            loop = asyncio.get_running_loop()
             result = await run_backtest_async(
                 strategy_code=strategy_code,
                 symbols=symbols,
@@ -116,7 +114,7 @@ def create_backtest_router(
                 end_date=end_date,
                 starting_cash=starting_cash,
                 interval=interval,
-                strategy_params=strategy_params,
+                data_config=data_config,
             )
             return JSONResponse(result.to_dict())
 
@@ -129,7 +127,7 @@ def create_backtest_router(
 
     @router.get("/api/load-code")
     async def load_strategy_code(request: Request, session_id: Optional[str] = Query(None)):
-        """Load strategy code for the backtest page — from session or default."""
+        """Load strategy code + data config for the backtest page."""
         if not get_current_user(request):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
 
@@ -138,6 +136,7 @@ def create_backtest_router(
             if info and info.get("strategy_code"):
                 return JSONResponse({
                     "code": info["strategy_code"],
+                    "data_config": info.get("data_config"),
                     "source": "session",
                     "symbols": info.get("symbols", []),
                     "starting_budget": info.get("starting_budget", 10000),
@@ -145,8 +144,14 @@ def create_backtest_router(
 
         # Fallback to default strategy
         from pathlib import Path
-        default = Path(__file__).resolve().parent.parent / "strategy" / "examples" / "momentum.py"
+        from session.manager import DEFAULT_DATA_CONFIG
+        default = Path(__file__).resolve().parent.parent / "strategy" / "examples" / "momentum_v2.py"
         code = default.read_text()
-        return JSONResponse({"code": code, "source": "default", "symbols": []})
+        return JSONResponse({
+            "code": code,
+            "data_config": DEFAULT_DATA_CONFIG,
+            "source": "default",
+            "symbols": [],
+        })
 
     return router

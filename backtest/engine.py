@@ -1,31 +1,25 @@
-"""Backtesting engine — replay historical OHLCV data through a strategy.
+"""Backtesting engine (V2) — replay historical data through a weight-based strategy.
 
-No Redis, no DB, no async overhead required.  Downloads data from yfinance,
-instantiates the user's strategy class, feeds bars chronologically, tracks
-virtual portfolio, and returns a complete BacktestResult.
+Downloads OHLCV from yfinance, builds rolling numpy buffers matching the user's
+data config, calls main(data) every N bars, rebalances portfolio via weights.
+No Redis, no DB, no async overhead.
 """
 
-import ast
-import importlib
 import logging
 import math
-import types
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any
 
 import numpy as np
 import pandas as pd
 import yfinance as yf
 
-from shared.enums import Exchange, Signal, Side
-from shared.schemas import MarketTick, OHLCVBar, TradeSignal
+from strategy.executor import StrategyExecutor
 
 logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Result containers
+# Result containers (unchanged from V1)
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -36,6 +30,7 @@ class BacktestTrade:
     side: str          # "buy" / "sell"
     quantity: float
     price: float
+    value: float       # dollar value of the trade
     cash_after: float
     equity_after: float
 
@@ -85,71 +80,86 @@ class BacktestResult:
 
 
 # ---------------------------------------------------------------------------
-# Lightweight portfolio tracker (no Redis / DB needed)
+# Weight-based virtual portfolio
 # ---------------------------------------------------------------------------
 
 class _VirtualPortfolio:
-    """In-memory portfolio for backtesting — mirrors SimulationAdapter logic."""
+    """In-memory portfolio for backtesting — rebalances via target weights."""
 
-    def __init__(self, starting_cash: float):
+    def __init__(self, starting_cash: float, symbols: list[str]):
         self.cash: float = starting_cash
         self.starting_cash: float = starting_cash
-        self.positions: dict[str, dict] = {}  # symbol -> {qty, avg_price}
+        self.symbols = symbols
+        self.positions: dict[str, float] = {}  # symbol -> quantity
         self.last_prices: dict[str, float] = {}
 
-    def update_price(self, symbol: str, price: float) -> None:
-        self.last_prices[symbol] = price
+    def update_prices(self, prices: dict[str, float]) -> None:
+        self.last_prices.update(prices)
 
-    def execute_signal(self, signal: TradeSignal, price: float) -> BacktestTrade | None:
-        """Execute a trade signal.  Returns BacktestTrade or None if rejected."""
-        symbol = signal.symbol
+    def rebalance(self, target_weights: np.ndarray, date_str: str) -> list[BacktestTrade]:
+        """Rebalance to target weights. Returns list of trades executed."""
+        trades = []
+        total_equity = self.get_equity()
+        n = len(self.symbols)
 
-        if signal.signal == Signal.BUY:
-            return self._buy(symbol, price, signal.strength)
-        elif signal.signal == Signal.SELL:
-            return self._sell(symbol, price, signal.strength)
-        return None
+        if target_weights.shape != (n,):
+            return trades
 
-    def _buy(self, symbol: str, price: float, strength: float) -> BacktestTrade | None:
-        # Allocate strength * remaining cash (capped to available)
-        allocation = self.cash * min(strength, 1.0) * 0.95  # keep 5% reserve
-        if allocation < 1.0:
-            return None
-        qty = allocation / price
-        self.cash -= qty * price
-        pos = self.positions.setdefault(symbol, {"qty": 0.0, "avg_price": 0.0})
-        old_value = pos["qty"] * pos["avg_price"]
-        pos["qty"] += qty
-        pos["avg_price"] = (old_value + qty * price) / pos["qty"] if pos["qty"] > 0 else price
-        equity = self.get_equity()
-        return BacktestTrade(
-            timestamp="", symbol=symbol, side="buy",
-            quantity=round(qty, 8), price=round(price, 6),
-            cash_after=round(self.cash, 2), equity_after=round(equity, 2),
-        )
+        for i, symbol in enumerate(self.symbols):
+            price = self.last_prices.get(symbol, 0)
+            if price <= 0:
+                continue
 
-    def _sell(self, symbol: str, price: float, strength: float) -> BacktestTrade | None:
-        pos = self.positions.get(symbol)
-        if not pos or pos["qty"] <= 0:
-            return None
-        sell_qty = pos["qty"] * min(strength, 1.0)
-        if sell_qty <= 0:
-            return None
-        self.cash += sell_qty * price
-        pos["qty"] -= sell_qty
-        if pos["qty"] < 1e-8:
-            del self.positions[symbol]
-        equity = self.get_equity()
-        return BacktestTrade(
-            timestamp="", symbol=symbol, side="sell",
-            quantity=round(sell_qty, 8), price=round(price, 6),
-            cash_after=round(self.cash, 2), equity_after=round(equity, 2),
-        )
+            target_value = target_weights[i] * total_equity
+            current_qty = self.positions.get(symbol, 0.0)
+            current_value = current_qty * price
+            diff_value = target_value - current_value
+
+            # Skip tiny rebalances (< $1)
+            if abs(diff_value) < 1.0:
+                continue
+
+            qty = abs(diff_value) / price
+            if diff_value > 0:
+                # BUY — can't spend more than available cash
+                max_buy_value = self.cash
+                actual_value = min(abs(diff_value), max_buy_value)
+                if actual_value < 1.0:
+                    continue
+                qty = actual_value / price
+                self.cash -= qty * price
+                self.positions[symbol] = self.positions.get(symbol, 0.0) + qty
+                trades.append(BacktestTrade(
+                    timestamp=date_str, symbol=symbol, side="buy",
+                    quantity=round(qty, 8), price=round(price, 6),
+                    value=round(qty * price, 2),
+                    cash_after=round(self.cash, 2),
+                    equity_after=round(self.get_equity(), 2),
+                ))
+            else:
+                # SELL — can't sell more than we have
+                max_sell_qty = self.positions.get(symbol, 0.0)
+                qty = min(qty, max_sell_qty)
+                if qty <= 0:
+                    continue
+                self.cash += qty * price
+                self.positions[symbol] = self.positions.get(symbol, 0.0) - qty
+                if self.positions[symbol] < 1e-10:
+                    self.positions.pop(symbol, None)
+                trades.append(BacktestTrade(
+                    timestamp=date_str, symbol=symbol, side="sell",
+                    quantity=round(qty, 8), price=round(price, 6),
+                    value=round(qty * price, 2),
+                    cash_after=round(self.cash, 2),
+                    equity_after=round(self.get_equity(), 2),
+                ))
+
+        return trades
 
     def get_equity(self) -> float:
         positions_val = sum(
-            pos["qty"] * self.last_prices.get(sym, pos["avg_price"])
-            for sym, pos in self.positions.items()
+            qty * self.last_prices.get(sym, 0)
+            for sym, qty in self.positions.items()
         )
         return self.cash + positions_val
 
@@ -158,46 +168,7 @@ class _VirtualPortfolio:
 
 
 # ---------------------------------------------------------------------------
-# Strategy class loader (from source code string)
-# ---------------------------------------------------------------------------
-
-def _load_strategy_from_code(source: str, strategy_id: str = "backtest", params: dict | None = None):
-    """Compile and instantiate a strategy class from raw Python source code.
-
-    Returns the strategy instance or raises ValueError on error.
-    """
-    from strategy.base import BaseStrategy
-
-    # Parse + compile
-    tree = ast.parse(source)
-    code_obj = compile(tree, "<backtest_strategy>", "exec")
-
-    # Create a module namespace with access to project imports
-    mod = types.ModuleType("_backtest_strategy")
-    mod.__dict__["__builtins__"] = __builtins__
-
-    # Pre-populate allowed imports so the user code's import statements work
-    exec(code_obj, mod.__dict__)
-
-    # Find the BaseStrategy subclass
-    strategy_cls = None
-    for name, obj in mod.__dict__.items():
-        if (
-            isinstance(obj, type)
-            and issubclass(obj, BaseStrategy)
-            and obj is not BaseStrategy
-        ):
-            strategy_cls = obj
-            break
-
-    if strategy_cls is None:
-        raise ValueError("No BaseStrategy subclass found in strategy code")
-
-    return strategy_cls(strategy_id=strategy_id, params=params or {})
-
-
-# ---------------------------------------------------------------------------
-# Data download
+# Data download (reused from V1)
 # ---------------------------------------------------------------------------
 
 def download_historical_data(
@@ -235,17 +206,18 @@ def download_historical_data(
             # Normalize column names
             rename_map = {}
             for col in df.columns:
-                if col.lower() == "date" or col.lower() == "datetime":
+                cl = col.lower()
+                if cl in ("date", "datetime"):
                     rename_map[col] = "Date"
-                elif col.lower() == "open":
+                elif cl == "open":
                     rename_map[col] = "Open"
-                elif col.lower() == "high":
+                elif cl == "high":
                     rename_map[col] = "High"
-                elif col.lower() == "low":
+                elif cl == "low":
                     rename_map[col] = "Low"
-                elif col.lower() == "close":
+                elif cl == "close":
                     rename_map[col] = "Close"
-                elif col.lower() == "volume":
+                elif cl == "volume":
                     rename_map[col] = "Volume"
             df = df.rename(columns=rename_map)
             all_frames.append(df[["Date", "Symbol", "Open", "High", "Low", "Close", "Volume"]])
@@ -261,7 +233,39 @@ def download_historical_data(
 
 
 # ---------------------------------------------------------------------------
-# Metrics calculation
+# Rolling buffer builder
+# ---------------------------------------------------------------------------
+
+def _build_data_snapshot(
+    buffers: dict[str, np.ndarray],
+    fill_counts: dict[str, int],
+    fields: dict[str, int],
+    symbols: list[str],
+) -> dict[str, np.ndarray] | None:
+    """Slice rolling buffers to lookback sizes. Returns None if not enough data."""
+    result = {}
+    for field_name, lookback in fields.items():
+        if fill_counts.get(field_name, 0) < lookback:
+            return None
+        buf = buffers[field_name]
+        result[field_name] = buf[:, -lookback:].copy()
+    result["tickers"] = symbols
+    return result
+
+
+def _append_to_buffer(buffers: dict[str, np.ndarray],
+                       fill_counts: dict[str, int],
+                       field_name: str,
+                       values: np.ndarray) -> None:
+    """Shift buffer left and write new values."""
+    buf = buffers[field_name]
+    buf[:, :-1] = buf[:, 1:]
+    buf[:, -1] = values
+    fill_counts[field_name] = min(fill_counts[field_name] + 1, buf.shape[1])
+
+
+# ---------------------------------------------------------------------------
+# Metrics calculation (reused from V1, adapted for weight-based trades)
 # ---------------------------------------------------------------------------
 
 def _compute_metrics(
@@ -316,14 +320,12 @@ def _compute_metrics(
         max_dd = max(max_dd, dd)
     metrics.max_drawdown_pct = round(max_dd * 100, 2)
 
-    # Trade analysis
+    # Trade analysis — group buy/sell pairs per symbol
     metrics.total_trades = len(trades)
     if trades:
-        # Group trades into round-trips: buy then sell
-        # Simple approach: track P&L per sell
         wins = []
         losses = []
-        buy_prices: dict[str, list[float]] = {}  # symbol -> list of buy prices
+        buy_prices: dict[str, list[float]] = {}
 
         for t in trades:
             if t.side == "buy":
@@ -337,7 +339,7 @@ def _compute_metrics(
                         wins.append(pnl_pct)
                     else:
                         losses.append(pnl_pct)
-                    buy_prices[t.symbol] = []  # reset after sell
+                    buy_prices[t.symbol] = []
 
         metrics.winning_trades = len(wins)
         metrics.losing_trades = len(losses)
@@ -348,7 +350,6 @@ def _compute_metrics(
             metrics.avg_win_pct = round(sum(wins) / len(wins), 2)
         if losses:
             metrics.avg_loss_pct = round(sum(losses) / len(losses), 2)
-        # Profit factor
         gross_wins = sum(wins) if wins else 0
         gross_losses = abs(sum(losses)) if losses else 0
         if gross_losses > 0:
@@ -360,36 +361,67 @@ def _compute_metrics(
 
 
 # ---------------------------------------------------------------------------
-# Main backtest runner
+# Main backtest runner (V2)
 # ---------------------------------------------------------------------------
 
-import asyncio
-
-
-async def _run_backtest_async(
+def run_backtest(
     strategy_code: str,
     symbols: list[str],
     start_date: str,
     end_date: str,
     starting_cash: float = 10000.0,
     interval: str = "1d",
-    strategy_params: dict | None = None,
+    data_config: dict | None = None,
 ) -> BacktestResult:
-    """Core async backtest logic.  Called from the sync wrapper."""
+    """Run a V2 weight-based backtest.
+
+    Args:
+        strategy_code: Python source containing main(data) function.
+        symbols: List of ticker symbols.
+        start_date: Start date (YYYY-MM-DD).
+        end_date: End date (YYYY-MM-DD).
+        starting_cash: Initial cash.
+        interval: yfinance bar interval (1d, 1wk, 1mo, 1h, etc.).
+        data_config: Optional data config dict. If None, uses default (price:20, volume:10).
+
+    Returns:
+        BacktestResult with equity curve, trades, and metrics.
+    """
     result = BacktestResult()
 
-    # 1. Load strategy from code
+    # 1. Parse data config
+    if data_config is None:
+        data_config = {
+            "resolution": interval,
+            "exec_every_n": 1,
+            "fields": {
+                "price": {"enabled": True, "lookback": 20},
+                "volume": {"enabled": True, "lookback": 10},
+            },
+        }
+
+    exec_every_n = max(1, data_config.get("exec_every_n", 1))
+
+    # Determine enabled fields and lookbacks
+    fields: dict[str, int] = {}
+    for fname, fcfg in data_config.get("fields", {}).items():
+        if isinstance(fcfg, dict) and fcfg.get("enabled") and fcfg.get("lookback", 0) > 0:
+            fields[fname] = fcfg["lookback"]
+        elif isinstance(fcfg, int) and fcfg > 0:
+            fields[fname] = fcfg
+
+    if not fields:
+        fields = {"price": 20}
+
+    # 2. Load strategy
+    executor = StrategyExecutor(session_id="backtest", symbols=symbols)
     try:
-        strategy = _load_strategy_from_code(
-            strategy_code,
-            strategy_id="backtest",
-            params=strategy_params or {},
-        )
+        executor.load_strategy(strategy_code)
     except Exception as e:
         result.errors.append(f"Failed to load strategy: {e}")
         return result
 
-    # 2. Download historical data
+    # 3. Download historical data
     try:
         data = download_historical_data(symbols, start_date, end_date, interval)
     except Exception as e:
@@ -402,70 +434,96 @@ async def _run_backtest_async(
         )
         return result
 
-    # 3. Initialize portfolio
-    portfolio = _VirtualPortfolio(starting_cash)
+    # 4. Initialize portfolio and rolling buffers
+    portfolio = _VirtualPortfolio(starting_cash, symbols)
+    n_symbols = len(symbols)
 
-    # 4. Call on_start
-    try:
-        await strategy.on_start()
-    except Exception:
-        pass  # on_start is optional
+    # Map of OHLCV column names → field names
+    col_to_field = {
+        "price": "Close", "open": "Open", "high": "High",
+        "low": "Low", "volume": "Volume",
+    }
 
-    # 5. Replay bars in chronological order
+    buffers: dict[str, np.ndarray] = {}
+    fill_counts: dict[str, int] = {}
+    for fname, lookback in fields.items():
+        buf_size = lookback + 10
+        buffers[fname] = np.full((n_symbols, buf_size), np.nan, dtype=np.float64)
+        fill_counts[fname] = 0
+
+    # 5. Build symbol-to-index mapping
+    sym_to_idx = {s: i for i, s in enumerate(symbols)}
+
+    # 6. Walk through dates chronologically
     grouped = data.groupby("Date")
     dates_sorted = sorted(grouped.groups.keys())
 
+    bar_count = 0
+
     for date in dates_sorted:
-        day_bars = grouped.get_group(date)
+        day_data = grouped.get_group(date)
+        date_str = pd.Timestamp(date).strftime("%Y-%m-%d")
 
-        for _, row in day_bars.iterrows():
+        # Build arrays for this bar: one value per symbol
+        bar_values: dict[str, np.ndarray] = {}
+        for fname in fields:
+            bar_values[fname] = np.full(n_symbols, np.nan)
+
+        prices_this_bar: dict[str, float] = {}
+
+        for _, row in day_data.iterrows():
             symbol = row["Symbol"]
-            price = float(row["Close"])
-            portfolio.update_price(symbol, price)
-
-            # Build OHLCVBar
-            bar = OHLCVBar(
-                symbol=symbol,
-                open=float(row["Open"]),
-                high=float(row["High"]),
-                low=float(row["Low"]),
-                close=price,
-                volume=float(row["Volume"]) if pd.notna(row["Volume"]) else 0.0,
-                interval=interval,
-                timestamp=pd.Timestamp(date).to_pydatetime().replace(tzinfo=timezone.utc),
-                exchange=Exchange.ALPACA,  # backtest context
-            )
-
-            # Also create a tick from close price for on_tick
-            tick = MarketTick(
-                symbol=symbol,
-                price=price,
-                volume=float(row["Volume"]) if pd.notna(row["Volume"]) else 0.0,
-                timestamp=bar.timestamp,
-                exchange=Exchange.ALPACA,
-            )
-
-            # Call strategy
-            try:
-                signal_bar = await strategy.on_bar(bar)
-                signal_tick = await strategy.on_tick(tick)
-            except Exception as e:
-                result.errors.append(
-                    f"Strategy error on {date} {symbol}: {e}"
-                )
+            idx = sym_to_idx.get(symbol)
+            if idx is None:
                 continue
 
-            # Process signals (bar signal takes priority)
-            for sig in [signal_bar, signal_tick]:
-                if sig is not None and sig.signal != Signal.HOLD:
-                    trade = portfolio.execute_signal(sig, price)
-                    if trade:
-                        date_str = pd.Timestamp(date).strftime("%Y-%m-%d")
-                        trade.timestamp = date_str
-                        result.trades.append(trade)
+            price = float(row["Close"])
+            prices_this_bar[symbol] = price
 
-        # Record equity at end of day
-        date_str = pd.Timestamp(date).strftime("%Y-%m-%d")
+            for fname in fields:
+                col = col_to_field.get(fname)
+                if col and col in row:
+                    val = float(row[col]) if pd.notna(row[col]) else 0.0
+                    bar_values[fname][idx] = val
+
+            # VWAP approximation (HLC/3) if requested
+            if "vwap" in fields:
+                h = float(row["High"]) if pd.notna(row.get("High")) else price
+                l = float(row["Low"]) if pd.notna(row.get("Low")) else price
+                bar_values["vwap"][idx] = (h + l + price) / 3
+
+        # Update portfolio prices
+        portfolio.update_prices(prices_this_bar)
+
+        # Fill NaN with previous values or 0 for missing symbols
+        for fname in fields:
+            vals = bar_values[fname]
+            for i in range(n_symbols):
+                if np.isnan(vals[i]):
+                    # Use last known value from buffer
+                    if fill_counts[fname] > 0:
+                        vals[i] = buffers[fname][i, -1]
+                    else:
+                        vals[i] = 0.0
+
+        # Append to rolling buffers
+        for fname in fields:
+            _append_to_buffer(buffers, fill_counts, fname, bar_values[fname])
+
+        bar_count += 1
+
+        # Run strategy every N bars
+        if bar_count % exec_every_n == 0:
+            snapshot = _build_data_snapshot(buffers, fill_counts, fields, symbols)
+            if snapshot is not None:
+                try:
+                    weights = executor.execute(snapshot)
+                    new_trades = portfolio.rebalance(weights, date_str)
+                    result.trades.extend(new_trades)
+                except Exception as e:
+                    result.errors.append(f"Strategy error on {date_str}: {e}")
+
+        # Record equity at end of bar
         equity = portfolio.get_equity()
         result.equity_curve.append({
             "date": date_str,
@@ -474,47 +532,16 @@ async def _run_backtest_async(
             "positions_value": round(portfolio.get_positions_value(), 2),
         })
 
-    # 6. Call on_stop
-    try:
-        await strategy.on_stop()
-    except Exception:
-        pass
-
     # 7. Compute metrics
     result.metrics = _compute_metrics(result.equity_curve, result.trades, starting_cash)
     result.success = True
 
     logger.info(
         "Backtest complete: %s symbols, %d bars, %d trades, return=%.2f%%",
-        symbols, len(data), len(result.trades), result.metrics.total_return_pct,
+        symbols, len(dates_sorted), len(result.trades), result.metrics.total_return_pct,
     )
 
     return result
-
-
-def run_backtest(
-    strategy_code: str,
-    symbols: list[str],
-    start_date: str,
-    end_date: str,
-    starting_cash: float = 10000.0,
-    interval: str = "1d",
-    strategy_params: dict | None = None,
-) -> BacktestResult:
-    """Synchronous entry point for backtesting.
-
-    Creates a new event loop to run the async strategy methods.
-    Use run_backtest_async() if already inside an event loop.
-    """
-    return asyncio.run(_run_backtest_async(
-        strategy_code=strategy_code,
-        symbols=symbols,
-        start_date=start_date,
-        end_date=end_date,
-        starting_cash=starting_cash,
-        interval=interval,
-        strategy_params=strategy_params,
-    ))
 
 
 async def run_backtest_async(
@@ -524,15 +551,20 @@ async def run_backtest_async(
     end_date: str,
     starting_cash: float = 10000.0,
     interval: str = "1d",
-    strategy_params: dict | None = None,
+    data_config: dict | None = None,
 ) -> BacktestResult:
-    """Async entry point — use when already inside an event loop (e.g. FastAPI)."""
-    return await _run_backtest_async(
-        strategy_code=strategy_code,
-        symbols=symbols,
-        start_date=start_date,
-        end_date=end_date,
-        starting_cash=starting_cash,
-        interval=interval,
-        strategy_params=strategy_params,
+    """Async entry point — runs the sync backtest in a thread executor."""
+    import asyncio
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None,
+        lambda: run_backtest(
+            strategy_code=strategy_code,
+            symbols=symbols,
+            start_date=start_date,
+            end_date=end_date,
+            starting_cash=starting_cash,
+            interval=interval,
+            data_config=data_config,
+        ),
     )
