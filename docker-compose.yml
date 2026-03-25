@@ -93,6 +93,7 @@ else:
       db-init:
         condition: service_completed_successfully
     restart: unless-stopped
+    stop_grace_period: 30s  # BUG 8: give time to close sessions, orders, DB connections
 
 volumes:
   redis_data:
