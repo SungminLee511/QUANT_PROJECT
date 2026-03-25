@@ -3,6 +3,7 @@ version: "3.8"
 services:
   redis:
     image: redis:7-alpine
+    command: redis-server --appendonly yes  # BUG 6: enable AOF persistence
     ports:
       - "6379:6379"
     volumes:
