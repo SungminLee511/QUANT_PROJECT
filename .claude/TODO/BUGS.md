@@ -117,3 +117,7 @@
 ---
 
 ## ~~BUG-42: Binance day_change_pct inconsistent between live and historical — FIXED~~
+
+---
+
+## ~~BUG-43: Backtest API sentinel checks can't distinguish user defaults from absent values — FIXED~~

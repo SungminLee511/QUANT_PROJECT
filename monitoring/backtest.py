@@ -95,6 +95,11 @@ def create_backtest_router(
 
         starting_cash = float(body.get("starting_cash", 10000))
         interval = body.get("interval", "1d")
+        # Track which fields user explicitly provided vs. defaulted
+        _has_strategy_mode = "strategy_mode" in body
+        _has_short_loss = "short_loss_limit_pct" in body
+        _has_commission = "commission_pct" in body
+
         strategy_mode = body.get("strategy_mode", "rebalance")
         short_loss_limit_pct = float(body.get("short_loss_limit_pct", 1.0))
         commission_pct = float(body.get("commission_pct", 0.0))
@@ -110,13 +115,13 @@ def create_backtest_router(
         from backtest.engine import run_backtest_async
 
         try:
-            # Extract settings from data_config if not explicitly provided in body
+            # Fall back to data_config values only if user didn't explicitly provide them
             if data_config:
-                if strategy_mode == "rebalance":
+                if not _has_strategy_mode:
                     strategy_mode = data_config.get("strategy_mode", strategy_mode)
-                if short_loss_limit_pct == 1.0:
+                if not _has_short_loss:
                     short_loss_limit_pct = float(data_config.get("short_loss_limit_pct", short_loss_limit_pct))
-                if commission_pct == 0.0:
+                if not _has_commission:
                     commission_pct = float(data_config.get("commission_pct", commission_pct))
 
             result = await run_backtest_async(
