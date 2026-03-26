@@ -25,6 +25,8 @@ class BinanceAdapter(BaseExchangeAdapter):
         self._api_secret = binance_cfg.get("api_secret", "")
         self._testnet = binance_cfg.get("testnet", True)
         self._client: AsyncClient | None = None
+        # Map external_order_id -> symbol for cancel/status lookups (BUG-20)
+        self._order_symbols: dict[str, str] = {}
 
     async def connect(self) -> None:
         self._client = await AsyncClient.create(
@@ -54,6 +56,7 @@ class BinanceAdapter(BaseExchangeAdapter):
             try:
                 result = await self._client.create_order(**params)
                 external_id = str(result.get("orderId", ""))
+                self._order_symbols[external_id] = order_request.symbol
                 logger.info(
                     "Binance order placed: %s %s %s qty=%s -> id=%s",
                     order_request.side.value,
@@ -87,11 +90,17 @@ class BinanceAdapter(BaseExchangeAdapter):
 
         raise RuntimeError("Exhausted retries placing Binance order")
 
-    async def cancel_order(self, external_order_id: str) -> bool:
+    async def cancel_order(self, external_order_id: str, symbol: str | None = None) -> bool:
+        """Cancel a Binance order. Looks up symbol from internal map if not provided."""
         try:
-            # Need symbol for Binance cancel — stored alongside order
-            # For now, this requires the caller to provide the symbol context
-            await self._client.cancel_order(orderId=int(external_order_id))
+            sym = symbol or self._order_symbols.get(external_order_id)
+            if not sym:
+                logger.error(
+                    "Cannot cancel Binance order %s — symbol unknown", external_order_id
+                )
+                return False
+            await self._client.cancel_order(symbol=sym, orderId=int(external_order_id))
+            self._order_symbols.pop(external_order_id, None)
             return True
         except Exception:
             logger.exception("Failed to cancel Binance order %s", external_order_id)

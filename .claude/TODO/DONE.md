@@ -260,3 +260,10 @@
 
 **Fix:** Added `avg_price` column to `Order` model in `db/models.py`. `_persist_order` now writes `avg_price` in both update and insert branches. Fixed alongside BUG-17.
 **Date:** 2026-03-26
+
+---
+
+## BUG-20: Binance `cancel_order` missing required `symbol` parameter — HIGH (was)
+
+**Fix:** Added `_order_symbols` dict to `BinanceAdapter`, populated during `place_order`. `cancel_order` now looks up the symbol and passes it to the Binance API. Returns False with error log if symbol is unknown.
+**Date:** 2026-03-26

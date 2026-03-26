@@ -44,15 +44,7 @@ The method only handles `name, symbols, api_key, api_secret, testnet, starting_b
 
 ---
 
-## BUG-20: Binance `cancel_order` missing required `symbol` parameter — HIGH
-
-**File:** `execution/binance_adapter.py:90-98`
-
-Binance REST API requires `symbol` for order cancellation. The method only receives `external_order_id` (matching the base class interface). Every cancel attempt will fail with a Binance API error.
-
-**Impact:** Cannot cancel orders on Binance live trading. All cancels silently fail (returns False).
-
-**Fix:** Maintain an internal `{order_id: symbol}` map populated during `place_order`, and look up the symbol in `cancel_order`.
+## ~~BUG-20: Binance `cancel_order` missing required `symbol` parameter — FIXED~~
 
 ---
 
