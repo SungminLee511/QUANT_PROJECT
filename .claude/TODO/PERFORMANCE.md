@@ -6,14 +6,6 @@
 
 ## Performance
 
-### PERF-2: N+1 order book requests in Binance source — MEDIUM
-
-**File:** `data/sources/binance_source.py`
-
-Symbol-by-symbol serial HTTP requests for order book data.
-
-**Fix:** Use `asyncio.gather()` for concurrent requests, or batch via combined stream.
-
 ### PERF-3: Eager-loading all DB relationships — MEDIUM
 
 **File:** `db/models.py`

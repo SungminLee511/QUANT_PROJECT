@@ -113,3 +113,10 @@
 
 **Fix:** Refactored `fetch()` to use `yf.download()` for batch price/OHLCV data (1 HTTP request for all symbols). Falls back to per-symbol `fast_info` on failure. Fundamentals still use individual `ticker.info` (no batch API).
 **Date:** 2026-03-26
+
+---
+
+## PERF-2: N+1 order book requests in Binance source — MEDIUM (was)
+
+**Fix:** Replaced serial per-symbol order book requests with `ThreadPoolExecutor` (max 10 workers) for concurrent fetching in `data/sources/binance_source.py`.
+**Date:** 2026-03-26

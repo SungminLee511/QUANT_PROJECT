@@ -1,6 +1,8 @@
 """Binance data source — fetches live + daily crypto data from public API."""
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import numpy as np
 import requests
 
@@ -103,27 +105,34 @@ class BinanceSource:
             if "day_change_pct" in fields_to_fetch:
                 result["day_change_pct"] = day_change
 
-        # 2. Fetch order book for bid/ask/spread (per-symbol, since no multi-symbol endpoint)
+        # 2. Fetch order book for bid/ask/spread (concurrent, no multi-symbol endpoint)
         if needs_orderbook:
             bids = np.zeros(n, dtype=np.float64)
             asks = np.zeros(n, dtype=np.float64)
 
-            for symbol in symbols:
-                idx = sym_idx[symbol]
-                try:
-                    resp = self._session.get(
-                        f"{BINANCE_BASE}/api/v3/depth",
-                        params={"symbol": symbol, "limit": 1},
-                        timeout=5,
-                    )
-                    resp.raise_for_status()
-                    book = resp.json()
-                    if book.get("bids"):
-                        bids[idx] = float(book["bids"][0][0])
-                    if book.get("asks"):
-                        asks[idx] = float(book["asks"][0][0])
-                except Exception:
-                    logger.warning("Binance order book fetch error for %s", symbol)
+            def _fetch_book(symbol: str) -> tuple[str, float, float]:
+                resp = self._session.get(
+                    f"{BINANCE_BASE}/api/v3/depth",
+                    params={"symbol": symbol, "limit": 1},
+                    timeout=5,
+                )
+                resp.raise_for_status()
+                book = resp.json()
+                bid = float(book["bids"][0][0]) if book.get("bids") else 0.0
+                ask = float(book["asks"][0][0]) if book.get("asks") else 0.0
+                return symbol, bid, ask
+
+            with ThreadPoolExecutor(max_workers=min(n, 10)) as pool:
+                futures = {pool.submit(_fetch_book, sym): sym for sym in symbols}
+                for future in as_completed(futures):
+                    sym = futures[future]
+                    try:
+                        _, bid, ask = future.result()
+                        idx = sym_idx[sym]
+                        bids[idx] = bid
+                        asks[idx] = ask
+                    except Exception:
+                        logger.warning("Binance order book fetch error for %s", sym)
 
             if "bid" in fields_to_fetch:
                 result["bid"] = bids
