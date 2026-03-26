@@ -149,6 +149,53 @@
                 <div class="dc-hint">Effective strategy interval = resolution &times; N</div>
             </div>
 
+            <div class="dc-section">
+                <h3>Strategy Settings</h3>
+                <div class="dc-row">
+                    <label>Strategy Mode</label>
+                    <select id="dcStrategyMode" onchange="onStrategyModeChange()">
+                        <option value="rebalance">Rebalance (Long Only)</option>
+                        <option value="long_short">Long / Short</option>
+                    </select>
+                </div>
+                <div class="dc-hint">Rebalance: weights [0,1], no short selling. Long/Short: weights [-1,1], allows short positions.</div>
+                <div class="dc-row" id="shortLossRow" style="display:none;">
+                    <label>Short Loss Kill Switch</label>
+                    <select id="dcShortLossLimit">
+                        <option value="0.5">50%</option>
+                        <option value="0.75">75%</option>
+                        <option value="1.0" selected>100% (default)</option>
+                        <option value="1.5">150%</option>
+                        <option value="2.0">200%</option>
+                    </select>
+                </div>
+                <div class="dc-hint" id="shortLossHint" style="display:none;">Liquidate all positions if any short's loss exceeds this % of its entry value.</div>
+            </div>
+
+            <div class="dc-section">
+                <h3>Execution Settings</h3>
+                <div class="dc-row">
+                    <label>Schedule Mode</label>
+                    <select id="dcScheduleMode">
+                        <option value="always_on">Always On (24/7)</option>
+                        <option value="market_hours_only">Market Hours Only</option>
+                        <option value="close_only">Close Only (EOD rebalance)</option>
+                    </select>
+                </div>
+                <div class="dc-hint">Market Hours / Close Only apply to US stock sessions. Crypto is always 24/7.</div>
+                <div class="dc-row">
+                    <label>Sim Commission %</label>
+                    <select id="dcCommissionPct">
+                        <option value="0" selected>0% (free)</option>
+                        <option value="0.1">0.1%</option>
+                        <option value="0.3">0.3%</option>
+                        <option value="0.5">0.5%</option>
+                        <option value="1.0">1.0%</option>
+                    </select>
+                </div>
+                <div class="dc-hint">Applied to every trade in simulation &amp; backtest. Real sessions use actual broker fees.</div>
+            </div>
+
             <div id="dcSourceWarning" class="dc-warning"></div>
 
             <div class="field-section" id="liveFieldSection">
@@ -469,6 +516,12 @@ def main(data: dict) -> np.ndarray:
         if (e.target.id === 'dcResolution' || e.target.id === 'dcExecEveryN') updateEffective();
     });
 
+    function onStrategyModeChange() {
+        const isLongShort = document.getElementById('dcStrategyMode').value === 'long_short';
+        document.getElementById('shortLossRow').style.display = isLongShort ? 'flex' : 'none';
+        document.getElementById('shortLossHint').style.display = isLongShort ? 'block' : 'none';
+    }
+
     function isCryptoSession() {
         // Check current session type from sidebar
         const item = document.querySelector(`.session-item.active`);
@@ -484,6 +537,10 @@ def main(data: dict) -> np.ndarray:
         const config = {
             resolution: document.getElementById('dcResolution').value,
             exec_every_n: parseInt(document.getElementById('dcExecEveryN').value) || 1,
+            strategy_mode: document.getElementById('dcStrategyMode').value,
+            short_loss_limit_pct: parseFloat(document.getElementById('dcShortLossLimit').value) || 1.0,
+            schedule_mode: document.getElementById('dcScheduleMode').value,
+            commission_pct: parseFloat(document.getElementById('dcCommissionPct').value) || 0.0,
             fields: {},
             custom_data: [],
             custom_global_data: [],
@@ -624,6 +681,11 @@ def main(data: dict) -> np.ndarray:
             dataConfig = data.data_config || {};
             document.getElementById('dcResolution').value = dataConfig.resolution || '1min';
             document.getElementById('dcExecEveryN').value = dataConfig.exec_every_n || 1;
+            document.getElementById('dcStrategyMode').value = dataConfig.strategy_mode || 'rebalance';
+            document.getElementById('dcShortLossLimit').value = String(dataConfig.short_loss_limit_pct || 1.0);
+            document.getElementById('dcScheduleMode').value = dataConfig.schedule_mode || 'always_on';
+            document.getElementById('dcCommissionPct').value = String(dataConfig.commission_pct || 0);
+            onStrategyModeChange();
             renderFieldGrid(dataConfig);
             updateEffective();
 
@@ -752,6 +814,11 @@ def main(data: dict) -> np.ndarray:
             dataConfig = data.data_config || {};
             document.getElementById('dcResolution').value = dataConfig.resolution || '1min';
             document.getElementById('dcExecEveryN').value = dataConfig.exec_every_n || 1;
+            document.getElementById('dcStrategyMode').value = dataConfig.strategy_mode || 'rebalance';
+            document.getElementById('dcShortLossLimit').value = String(dataConfig.short_loss_limit_pct || 1.0);
+            document.getElementById('dcScheduleMode').value = dataConfig.schedule_mode || 'always_on';
+            document.getElementById('dcCommissionPct').value = String(dataConfig.commission_pct || 0);
+            onStrategyModeChange();
             renderFieldGrid(dataConfig);
             updateEffective();
             document.getElementById('customDataBlocks').innerHTML = '';

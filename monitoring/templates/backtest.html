@@ -126,6 +126,23 @@
                         <option value="1mo">Monthly (1mo)</option>
                     </select>
                 </div>
+                <div>
+                    <label>Strategy Mode</label>
+                    <select id="btStrategyMode">
+                        <option value="rebalance" selected>Rebalance (Long Only)</option>
+                        <option value="long_short">Long / Short</option>
+                    </select>
+                </div>
+                <div>
+                    <label>Commission %</label>
+                    <select id="btCommission">
+                        <option value="0" selected>0% (free)</option>
+                        <option value="0.1">0.1%</option>
+                        <option value="0.3">0.3%</option>
+                        <option value="0.5">0.5%</option>
+                        <option value="1.0">1.0%</option>
+                    </select>
+                </div>
                 <div class="full" style="display:flex; gap:10px; align-items:center; margin-top:4px;">
                     <button class="btn-run" id="btnRun" onclick="runBacktest()">
                         <span class="btn-text">Run Backtest</span>
@@ -258,6 +275,8 @@ async function runBacktest() {
         end_date: document.getElementById('btEndDate').value,
         starting_cash: parseFloat(document.getElementById('btCash').value) || 10000,
         interval: document.getElementById('btInterval').value,
+        strategy_mode: document.getElementById('btStrategyMode').value,
+        commission_pct: parseFloat(document.getElementById('btCommission').value) || 0,
     };
 
     try {
@@ -307,6 +326,8 @@ function showResults(data) {
         ${metricBox('Total Trades', m.total_trades, 0)}
         ${metricBox('Winners', m.winning_trades, 0)}
         ${metricBox('Losers', m.losing_trades, 0)}
+        ${m.total_fees > 0 ? metricBox('Total Fees', '$' + m.total_fees.toFixed(2), -1) : ''}
+        ${m.fees_pct > 0 ? metricBox('Fees %', m.fees_pct.toFixed(2) + '%', -1) : ''}
     `;
 
     // Chart
