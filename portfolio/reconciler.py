@@ -10,12 +10,24 @@ from shared.redis_client import RedisClient
 logger = logging.getLogger(__name__)
 
 
-class Reconciler:
-    """Periodically compares local portfolio state with exchange reality."""
+def _session_channel(session_id: str, channel: str) -> str:
+    """Build session-namespaced Redis key."""
+    if session_id:
+        return f"session:{session_id}:{channel}"
+    return channel
 
-    def __init__(self, config: dict, redis: RedisClient):
+
+class Reconciler:
+    """Periodically compares local portfolio state with exchange reality.
+
+    NOTE: Not currently wired into V2 SessionPipeline. Only used by the
+    legacy run_execution.py script. Session-aware for future integration.
+    """
+
+    def __init__(self, config: dict, redis: RedisClient, session_id: str = ""):
         self._config = config
         self._redis = redis
+        self._session_id = session_id
         self._interval = config.get("portfolio", {}).get("reconcile_interval_sec", 60)
         self._running = False
         self._binance: BinanceAdapter | None = None
@@ -48,7 +60,9 @@ class Reconciler:
 
     async def _reconcile(self) -> None:
         """Compare local state with exchange and log discrepancies."""
-        local_state = await self._redis.get_flag("portfolio:state")
+        local_state = await self._redis.get_flag(
+            _session_channel(self._session_id, "portfolio:state")
+        )
         if not local_state:
             return
 

@@ -36,3 +36,10 @@
 
 **Fix:** Added `"close": "Close"` to `col_to_field` in `backtest/engine.py`.
 **Date:** 2026-03-26
+
+---
+
+## BUG-6: Reconciler broken in multi-session mode — MEDIUM (was)
+
+**Fix:** Added `session_id` param to `Reconciler.__init__()`, uses `_session_channel()` for Redis key. Also documented that reconciler is not wired into V2 SessionPipeline (legacy only).
+**Date:** 2026-03-26
