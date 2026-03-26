@@ -52,10 +52,12 @@ class TradingSession(Base):
     )
 
     # Relationships
-    trades: Mapped[list["Trade"]] = relationship(back_populates="session", lazy="selectin")
-    positions: Mapped[list["Position"]] = relationship(back_populates="session", lazy="selectin")
-    orders: Mapped[list["Order"]] = relationship(back_populates="session", lazy="selectin")
-    equity_snapshots: Mapped[list["EquitySnapshot"]] = relationship(back_populates="session", lazy="selectin")
+    # lazy="select" (default) — load on access, not on every session query.
+    # Use selectinload() / joinedload() explicitly in queries that need related data.
+    trades: Mapped[list["Trade"]] = relationship(back_populates="session", lazy="select")
+    positions: Mapped[list["Position"]] = relationship(back_populates="session", lazy="select")
+    orders: Mapped[list["Order"]] = relationship(back_populates="session", lazy="select")
+    equity_snapshots: Mapped[list["EquitySnapshot"]] = relationship(back_populates="session", lazy="select")
 
 
 class Trade(Base):

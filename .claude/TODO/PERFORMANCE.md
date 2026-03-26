@@ -6,14 +6,6 @@
 
 ## Performance
 
-### PERF-3: Eager-loading all DB relationships — MEDIUM
-
-**File:** `db/models.py`
-
-`lazy="selectin"` on TradingSession relationships loads ALL trades/orders/positions/snapshots on every query. Kills performance over time.
-
-**Fix:** Change to `lazy="dynamic"` or `lazy="select"` and explicitly eager-load where needed.
-
 ### PERF-4: Auth session store never cleaned — LOW
 
 **File:** `monitoring/auth.py`

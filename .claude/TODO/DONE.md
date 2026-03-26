@@ -120,3 +120,10 @@
 
 **Fix:** Replaced serial per-symbol order book requests with `ThreadPoolExecutor` (max 10 workers) for concurrent fetching in `data/sources/binance_source.py`.
 **Date:** 2026-03-26
+
+---
+
+## PERF-3: Eager-loading all DB relationships — MEDIUM (was)
+
+**Fix:** Changed `lazy="selectin"` to `lazy="select"` on all 4 TradingSession relationships (trades, positions, orders, equity_snapshots) in `db/models.py`. No code accesses these relationships on session objects.
+**Date:** 2026-03-26
