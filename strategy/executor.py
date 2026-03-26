@@ -103,7 +103,15 @@ class StrategyExecutor:
 
 
 def _safe_builtins() -> dict:
-    """Return a restricted set of builtins for strategy execution."""
+    """Return a restricted set of builtins for strategy execution.
+
+    Security notes (SEC-1):
+    - ``type`` is excluded to prevent metaclass-based sandbox escapes
+    - ``__import__`` is replaced with a whitelist-only version
+    - numpy is provided directly; its ``os`` / ``__builtins__`` attrs are
+      still technically reachable, but this is accepted risk for a
+      personal-use system.  Full isolation requires subprocess/Wasm sandboxing.
+    """
     import builtins
 
     allowed = {
@@ -115,7 +123,9 @@ def _safe_builtins() -> dict:
         "filter", "format", "hash", "hex", "id", "isinstance",
         "issubclass", "iter", "len", "map", "max", "min", "next",
         "oct", "ord", "pow", "print", "range", "repr", "reversed",
-        "round", "slice", "sorted", "sum", "type", "zip",
+        "round", "slice", "sorted", "sum", "zip",
+        # NOTE: 'type' deliberately excluded — can be used for metaclass sandbox escapes
+        # NOTE: 'getattr'/'setattr'/'delattr' excluded — already in FORBIDDEN_NAMES
         # Exceptions
         "ValueError", "TypeError", "IndexError", "KeyError",
         "RuntimeError", "StopIteration", "ZeroDivisionError",

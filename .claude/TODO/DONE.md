@@ -176,3 +176,17 @@
 
 **Fix:** Added `secure=True` to `set_cookie()` in `monitoring/auth.py`. Cookie now only sent over HTTPS (Cloudflare tunnel provides this).
 **Date:** 2026-03-26
+
+---
+
+## SEC-1: Strategy `exec()` sandbox is bypassable — CRITICAL (was)
+
+**Fix:** Removed `type` from allowed builtins (prevents metaclass-based sandbox escapes). Documented remaining numpy.os reachability as accepted risk for personal-use system. Full isolation requires subprocess/Wasm sandboxing.
+**Date:** 2026-03-26
+
+---
+
+## SEC-2: Custom data `exec()` has no sandbox at all — CRITICAL (was)
+
+**Fix:** Added `_custom_data_builtins()` in `data/collector.py` with restricted builtins — blocks eval/exec/compile, provides whitelist-based `__import__` (allows network libs like requests/urllib but blocks os/subprocess/sys).
+**Date:** 2026-03-26

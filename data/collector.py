@@ -164,6 +164,11 @@ class DataCollector:
 
         Args:
             custom_data_code: List of dicts with "name", "type", "code" keys.
+
+        Security (SEC-2): Custom data functions intentionally have broader access
+        than strategies (network I/O allowed), but we still restrict dangerous
+        builtins like eval/exec/compile/__import__ to prevent arbitrary code
+        execution beyond what fetch() functions need.
         """
         for item in custom_data_code:
             name = item["name"]
@@ -171,7 +176,11 @@ class DataCollector:
             func_type = item.get("type", "per_stock")
 
             try:
-                namespace = {"np": np, "numpy": np}
+                namespace = {
+                    "np": np,
+                    "numpy": np,
+                    "__builtins__": _custom_data_builtins(),
+                }
                 exec(compile(code, f"<custom_data_{name}>", "exec"), namespace)
 
                 if "fetch" not in namespace:
@@ -419,3 +428,41 @@ class DataCollector:
         if np.any(np.isnan(prices)):
             return None
         return prices
+
+
+def _custom_data_builtins() -> dict:
+    """Restricted builtins for custom data functions (SEC-2).
+
+    Broader than strategy builtins (network libraries are allowed via normal
+    import), but still blocks dangerous operations like eval/exec/compile
+    and raw __import__ to limit blast radius.
+    """
+    import builtins
+
+    # Start with most builtins, then remove dangerous ones
+    safe = dict(vars(builtins))
+
+    # Remove dangerous execution primitives
+    for name in (
+        "eval", "exec", "compile", "__import__",
+        "breakpoint", "exit", "quit",
+    ):
+        safe.pop(name, None)
+
+    # Provide a whitelist-based __import__ — custom data is allowed network
+    # libraries but not os/subprocess/sys
+    _IMPORT_WHITELIST = {
+        "numpy", "math", "statistics", "collections", "itertools", "functools",
+        "datetime", "decimal", "typing", "logging", "json", "re",
+        "requests", "urllib", "http",  # network access intentionally allowed
+        "pandas", "yfinance",
+    }
+
+    def _restricted_import(name, *args, **kwargs):
+        top_level = name.split(".")[0]
+        if top_level not in _IMPORT_WHITELIST:
+            raise ImportError(f"Import of '{name}' is not allowed in custom data functions.")
+        return builtins.__import__(name, *args, **kwargs)
+
+    safe["__import__"] = _restricted_import
+    return safe

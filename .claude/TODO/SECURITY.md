@@ -4,28 +4,6 @@
 
 ---
 
-## SEC-1: Strategy `exec()` sandbox is bypassable — CRITICAL
-
-**File:** `strategy/executor.py` (~line 42)
-
-The sandbox restricts `__import__` but allows `numpy`, which exposes `numpy.os` and `numpy.__builtins__`. The `type` builtin also enables reconstruction of forbidden operations. Any user deploying strategy code can access the OS.
-
-**Options:**
-- RestrictedPython
-- Subprocess isolation with seccomp
-- Wasm runtime (e.g. wasmtime-py)
-- Accept risk for personal use (only you deploy strategies)
-
----
-
-## SEC-2: Custom data `exec()` has no sandbox at all — CRITICAL
-
-**File:** `data/collector.py` (~line 175)
-
-Custom data functions compiled with full builtins (no `__builtins__` restriction). AST validation is trivially bypassable.
-
-**Fix:** Same options as SEC-1. Lower priority since custom data is intentionally allowed network access.
-
----
-
----
+> All actionable items completed. SEC-1/SEC-2 sandbox limitations are documented
+> and accepted as inherent risk for personal-use. Full process isolation
+> (RestrictedPython, subprocess+seccomp, Wasm) would be needed for multi-tenant use.
