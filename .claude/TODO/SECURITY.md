@@ -53,14 +53,6 @@ Missing `secure=True` on `set_cookie()`. Cookie can be sent over HTTP.
 
 ---
 
-## SEC-6: Session update accepts arbitrary `**kwargs` — MEDIUM
-
-**File:** `monitoring/sessions.py` (~line 65)
-
-Raw request body unpacked as keyword args. Could override internal fields.
-
-**Fix:** Whitelist allowed update fields in the endpoint.
-
 ---
 
 ## SEC-7: Credential timing attack — LOW

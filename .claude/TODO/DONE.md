@@ -148,3 +148,10 @@
 
 **Fix:** Added `mask_secrets` parameter to `_session_to_dict()` and `get_session_info()`. API responses now show `"****" + last4` for api_key/api_secret. Internal `start_session` uses `mask_secrets=False` to get real keys.
 **Date:** 2026-03-26
+
+---
+
+## SEC-6: Session update accepts arbitrary `**kwargs` — MEDIUM (was)
+
+**Fix:** Added whitelist of allowed update fields in `monitoring/sessions.py` PUT endpoint. Only `name`, `symbols`, `api_key`, `api_secret`, `testnet`, `starting_budget`, `strategy_code`, `data_config`, `custom_data_code` are accepted.
+**Date:** 2026-03-26

@@ -62,7 +62,13 @@ def create_sessions_router(session_manager: SessionManager) -> APIRouter:
         if not get_current_user(request):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
         body = await request.json()
-        success = await session_manager.update_session(session_id, **body)
+        # Whitelist allowed update fields to prevent overriding internal fields
+        _ALLOWED_UPDATE_FIELDS = {
+            "name", "symbols", "api_key", "api_secret", "testnet",
+            "starting_budget", "strategy_code", "data_config", "custom_data_code",
+        }
+        filtered = {k: v for k, v in body.items() if k in _ALLOWED_UPDATE_FIELDS}
+        success = await session_manager.update_session(session_id, **filtered)
         if not success:
             return JSONResponse({"error": "not found"}, status_code=404)
         return JSONResponse({"updated": True})
