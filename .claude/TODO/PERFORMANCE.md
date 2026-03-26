@@ -6,14 +6,6 @@
 
 ## Performance
 
-### PERF-1: N+1 API calls in yfinance source — HIGH
-
-**File:** `data/sources/yfinance_source.py`
-
-Serial `yf.Ticker(symbol)` calls per symbol. 10 symbols × 1–3s each = 10–30s per scrape.
-
-**Fix:** Batch with `yf.download()` for price/OHLCV data. Keep individual calls only for fundamentals.
-
 ### PERF-2: N+1 order book requests in Binance source — MEDIUM
 
 **File:** `data/sources/binance_source.py`

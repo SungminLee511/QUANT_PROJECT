@@ -106,3 +106,10 @@
 
 **Fix:** Added try/except around `ticker.fast_info` access in both `fetch()` and `fetch_history()`. Falls back to empty dict if `fast_info` returns None or raises (e.g. rate limiting).
 **Date:** 2026-03-26
+
+---
+
+## PERF-1: N+1 API calls in yfinance source — HIGH (was)
+
+**Fix:** Refactored `fetch()` to use `yf.download()` for batch price/OHLCV data (1 HTTP request for all symbols). Falls back to per-symbol `fast_info` on failure. Fundamentals still use individual `ticker.info` (no batch API).
+**Date:** 2026-03-26
