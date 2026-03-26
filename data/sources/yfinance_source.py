@@ -45,7 +45,13 @@ class YFinanceSource:
         for symbol in symbols:
             try:
                 ticker = yf.Ticker(symbol)
-                fi = ticker.fast_info
+                try:
+                    fi = ticker.fast_info
+                except Exception:
+                    fi = None
+                if fi is None:
+                    logger.debug("fast_info returned None for %s, using fallback zeros", symbol)
+                    fi = {}
 
                 price = float(fi.get("lastPrice", 0) or fi.get("last_price", 0) or 0)
                 prev_close = float(fi.get("previousClose", 0) or fi.get("previous_close", 0) or 0)
@@ -198,7 +204,12 @@ class YFinanceSource:
                     try:
                         ticker = yf.Ticker(sym)
                         if field_name == "day_change_pct":
-                            fi = ticker.fast_info
+                            try:
+                                fi = ticker.fast_info
+                            except Exception:
+                                fi = None
+                            if fi is None:
+                                fi = {}
                             price = float(fi.get("lastPrice", 0) or fi.get("last_price", 0) or 0)
                             prev = float(fi.get("previousClose", 0) or fi.get("previous_close", 0) or 0)
                             val = ((price - prev) / prev * 100) if prev else 0.0

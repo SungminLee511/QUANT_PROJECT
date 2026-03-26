@@ -50,10 +50,3 @@ Symbol-by-symbol serial HTTP requests for order book data.
 
 ## Error Handling
 
-### ERR-4: No validation of yfinance `fast_info` return — LOW
-
-**File:** `data/sources/yfinance_source.py`
-
-`fast_info` can return None or raise on rate limiting. Behavior depends on yfinance version.
-
-**Fix:** Add defensive checks and try/except around fast_info access.

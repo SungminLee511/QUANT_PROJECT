@@ -99,3 +99,10 @@
 
 **Fix:** Wrapped DB query in `get_session_info()` with try/except, returns None on failure, logs exception. Prevents unhandled DB errors from crashing session start.
 **Date:** 2026-03-26
+
+---
+
+## ERR-4: No validation of yfinance `fast_info` return — LOW (was)
+
+**Fix:** Added try/except around `ticker.fast_info` access in both `fetch()` and `fetch_history()`. Falls back to empty dict if `fast_info` returns None or raises (e.g. rate limiting).
+**Date:** 2026-03-26
