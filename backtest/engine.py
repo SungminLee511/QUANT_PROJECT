@@ -32,6 +32,7 @@ class BacktestTrade:
     quantity: float
     price: float
     value: float       # dollar value of the trade
+    fee: float         # commission fee deducted
     cash_after: float
     equity_after: float
 
@@ -56,6 +57,8 @@ class BacktestMetrics:
     start_date: str = ""
     end_date: str = ""
     trading_days: int = 0
+    total_fees: float = 0.0
+    fees_pct: float = 0.0
 
     def to_dict(self) -> dict:
         return self.__dict__
@@ -87,11 +90,13 @@ class BacktestResult:
 class _VirtualPortfolio:
     """In-memory portfolio for backtesting — rebalances via target weights."""
 
-    def __init__(self, starting_cash: float, symbols: list[str], strategy_mode: str = "rebalance"):
+    def __init__(self, starting_cash: float, symbols: list[str], strategy_mode: str = "rebalance", commission_pct: float = 0.0):
         self.cash: float = starting_cash
         self.starting_cash: float = starting_cash
         self.symbols = symbols
         self.strategy_mode = strategy_mode
+        self.commission_rate = commission_pct / 100.0  # convert % to fraction
+        self.total_fees: float = 0.0
         self.positions: dict[str, float] = {}  # symbol -> quantity (negative = short)
         self.last_prices: dict[str, float] = {}
         self.short_entry_prices: dict[str, float] = {}  # for kill switch tracking
@@ -138,7 +143,10 @@ class _VirtualPortfolio:
                 if actual_value < 1.0:
                     continue
                 qty = actual_value / price
-                self.cash -= qty * price
+                trade_value = qty * price
+                fee = trade_value * self.commission_rate
+                self.cash -= trade_value + fee
+                self.total_fees += fee
                 new_qty = old_qty + qty
                 self.positions[symbol] = new_qty
 
@@ -150,7 +158,7 @@ class _VirtualPortfolio:
                 trades.append(BacktestTrade(
                     timestamp=date_str, symbol=symbol, side="buy",
                     quantity=round(qty, 8), price=round(price, 6),
-                    value=round(qty * price, 2),
+                    value=round(trade_value, 2), fee=round(fee, 4),
                     cash_after=round(self.cash, 2),
                     equity_after=round(self.get_equity(), 2),
                 ))
@@ -165,7 +173,10 @@ class _VirtualPortfolio:
                     if qty <= 0:
                         continue
 
-                self.cash += qty * price
+                trade_value = qty * price
+                fee = trade_value * self.commission_rate
+                self.cash += trade_value - fee
+                self.total_fees += fee
                 new_qty = old_qty - qty
                 self.positions[symbol] = new_qty
 
@@ -192,7 +203,7 @@ class _VirtualPortfolio:
                 trades.append(BacktestTrade(
                     timestamp=date_str, symbol=symbol, side="sell",
                     quantity=round(qty, 8), price=round(price, 6),
-                    value=round(qty * price, 2),
+                    value=round(trade_value, 2), fee=round(fee, 4),
                     cash_after=round(self.cash, 2),
                     equity_after=round(self.get_equity(), 2),
                 ))
@@ -315,9 +326,12 @@ def _compute_metrics(
     equity_curve: list[dict],
     trades: list[BacktestTrade],
     starting_cash: float,
+    total_fees: float = 0.0,
 ) -> BacktestMetrics:
     """Compute performance metrics from equity curve and trade log."""
     metrics = BacktestMetrics()
+    metrics.total_fees = round(total_fees, 2)
+    metrics.fees_pct = round(total_fees / starting_cash * 100, 2) if starting_cash > 0 else 0.0
 
     if len(equity_curve) < 2:
         return metrics
@@ -417,6 +431,7 @@ def run_backtest(
     data_config: dict | None = None,
     strategy_mode: str = "rebalance",
     short_loss_limit_pct: float = 1.0,
+    commission_pct: float = 0.0,
 ) -> BacktestResult:
     """Run a V2 weight-based backtest.
 
@@ -480,7 +495,7 @@ def run_backtest(
         return result
 
     # 4. Initialize portfolio and rolling buffers
-    portfolio = _VirtualPortfolio(starting_cash, symbols, strategy_mode=strategy_mode)
+    portfolio = _VirtualPortfolio(starting_cash, symbols, strategy_mode=strategy_mode, commission_pct=commission_pct)
     n_symbols = len(symbols)
 
     # Map of OHLCV column names → field names
@@ -603,7 +618,7 @@ def run_backtest(
                                 "cash": round(portfolio.cash, 2),
                                 "positions_value": round(portfolio.get_positions_value(), 2),
                             })
-                            result.metrics = _compute_metrics(result.equity_curve, result.trades, starting_cash)
+                            result.metrics = _compute_metrics(result.equity_curve, result.trades, starting_cash, portfolio.total_fees)
                             result.success = True
                             return result
 
@@ -620,7 +635,7 @@ def run_backtest(
         })
 
     # 7. Compute metrics
-    result.metrics = _compute_metrics(result.equity_curve, result.trades, starting_cash)
+    result.metrics = _compute_metrics(result.equity_curve, result.trades, starting_cash, portfolio.total_fees)
     result.success = True
 
     logger.info(
@@ -670,6 +685,7 @@ async def run_backtest_async(
     data_config: dict | None = None,
     strategy_mode: str = "rebalance",
     short_loss_limit_pct: float = 1.0,
+    commission_pct: float = 0.0,
 ) -> BacktestResult:
     """Async entry point — runs the sync backtest in a dedicated thread pool.
 
@@ -699,5 +715,6 @@ async def run_backtest_async(
                 data_config=data_config,
                 strategy_mode=strategy_mode,
                 short_loss_limit_pct=short_loss_limit_pct,
+                commission_pct=commission_pct,
             ),
         )

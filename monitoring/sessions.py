@@ -95,6 +95,70 @@ def create_sessions_router(session_manager: SessionManager) -> APIRouter:
         success = await session_manager.stop_session(session_id)
         return JSONResponse({"stopped": success})
 
+    @router.get("/{session_id}/equity")
+    async def session_equity(request: Request, session_id: str):
+        """Return equity info for a session.
+
+        For sim sessions: returns sim adapter equity + total fees.
+        For real sessions: returns broker equity (from API), computed equity
+        (from portfolio tracker), and the difference (= estimated commission).
+        """
+        if not get_current_user(request):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+        pipeline = session_manager._pipelines.get(session_id)
+        if pipeline is None:
+            return JSONResponse({"error": "session not running"}, status_code=404)
+
+        result: dict = {"session_id": session_id, "is_simulation": pipeline.session_type.is_simulation}
+
+        if pipeline.sim_adapter is not None:
+            # Sim session — equity from SimAdapter
+            balances = await pipeline.sim_adapter.get_balances()
+            result.update({
+                "equity": balances.get("total_equity", 0),
+                "cash": balances.get("cash", 0),
+                "positions_value": balances.get("positions_value", 0),
+                "total_fees": balances.get("total_fees", 0),
+            })
+        else:
+            # Real session — get broker equity via adapter + computed equity via tracker
+            from shared.redis_client import session_channel
+            broker_equity = None
+            computed_equity = None
+
+            # Broker equity from exchange adapter
+            if pipeline.order_router:
+                try:
+                    adapter = pipeline.order_router._get_adapter(pipeline.session_type.exchange)
+                    broker_balances = await adapter.get_balances()
+                    # Alpaca returns {"USD": {"total": equity}}
+                    # Binance returns per-asset balances
+                    if "USD" in broker_balances:
+                        broker_equity = broker_balances["USD"].get("total", 0)
+                    else:
+                        # Binance: sum all asset values (requires price lookup)
+                        broker_equity = sum(
+                            (info.get("free", 0) + info.get("locked", 0))
+                            for info in broker_balances.values()
+                        )
+                except Exception as e:
+                    logger.warning("Failed to fetch broker equity for session %s: %s", session_id, e)
+
+            # Computed equity from portfolio tracker (Redis state)
+            portfolio_key = session_channel(session_id, "portfolio:state")
+            state = await session_manager._redis.get_flag(portfolio_key)
+            if state:
+                computed_equity = state.get("total_equity")
+
+            result.update({
+                "broker_equity": broker_equity,
+                "computed_equity": computed_equity,
+                "estimated_fees": round(computed_equity - broker_equity, 2) if (computed_equity is not None and broker_equity is not None) else None,
+            })
+
+        return JSONResponse(result)
+
     @router.get("/{session_id}/market-status")
     async def market_status(request: Request, session_id: str):
         """Return current market status for a session's exchange."""

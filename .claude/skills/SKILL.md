@@ -167,7 +167,7 @@ QUANT_PROJECT/
 │
 └── tests/                             # Unit tests (96 tests)
     ├── conftest.py                    # Shared fixtures (mock Redis, sample data)
-    ├── test_backtest/test_engine.py   # V2: _VirtualPortfolio rebalancing, rolling buffers, _compute_metrics
+    ├── test_backtest/test_engine.py   # V2: _VirtualPortfolio rebalancing, rolling buffers, _compute_metrics, commission tests
     ├── test_data/
     │   ├── test_normalizer.py         # Binance trade/kline normalization
     │   └── test_collector.py          # V2: DataCollector buffers, snapshots, custom data loading
@@ -182,7 +182,7 @@ QUANT_PROJECT/
     ├── test_execution/test_router.py  # Order state machine transitions
     ├── test_portfolio/test_pnl.py     # P&L calculator, win rate
     └── test_session/
-        └── test_sim_adapter.py       # SimulationAdapter: buy/sell/clip/error scenarios
+        └── test_sim_adapter.py       # SimulationAdapter: buy/sell/clip/error scenarios + commission tests
 ```
 
 ---
@@ -402,6 +402,7 @@ Field registry (`data/sources/__init__.py`) defines 16 fields with per-exchange 
   "schedule_mode": "always_on",
   "strategy_mode": "rebalance",
   "short_loss_limit_pct": 1.0,
+  "commission_pct": 0.0,
   "fields": {
     "price": {"enabled": true, "lookback": 20, "source": "yfinance"},
     "volume": {"enabled": true, "lookback": 10, "source": "yfinance"},
@@ -512,6 +513,7 @@ async def on_strategy_trigger(data_snapshot: dict):
 | `/api/sessions/{id}` | DELETE | Stop + delete session and all its data |
 | `/api/sessions/{id}/start` | POST | Start session pipeline |
 | `/api/sessions/{id}/stop` | POST | Stop session pipeline |
+| `/api/sessions/{id}/equity` | GET | Equity breakdown: sim → equity/cash/positions_value/total_fees; real → broker_equity/computed_equity/estimated_fees |
 
 ---
 
@@ -528,11 +530,12 @@ async def on_strategy_trigger(data_snapshot: dict):
 - Tracks cash, positions, equity
 - `rebalance(target_weights, date)` → list of `BacktestTrade`
 - Computes realized P&L on sells, unrealized on holds
+- **Commission support:** `commission_pct` constructor param, fee applied on every buy/sell, tracked as `total_fees`
 
 ### Output
 ```python
 BacktestResult(
-    metrics=BacktestMetrics(...),  # total_return, sharpe, max_drawdown, win_rate, profit_factor, avg_win/loss
+    metrics=BacktestMetrics(...),  # total_return, sharpe, max_drawdown, win_rate, profit_factor, avg_win/loss, total_fees, fees_pct
     equity_curve=[{date, equity, cash, positions_value}, ...],
     trades=[BacktestTrade(...), ...],
     errors=[],
@@ -545,7 +548,7 @@ BacktestResult(
 | Endpoint | Method | Description |
 |---|---|---|
 | `/backtest` | GET | Backtest page |
-| `/backtest/api/run` | POST | Run backtest (symbols, dates, cash, interval, strategy_code) |
+| `/backtest/api/run` | POST | Run backtest (symbols, dates, cash, interval, strategy_code, commission_pct) |
 | `/backtest/api/load-code` | GET | Load strategy code for session |
 
 ---
@@ -557,6 +560,7 @@ BacktestResult(
 - Instant fills at last known market price (zero slippage, no partial fills)
 - Virtual cash balance (starting_budget) — decremented on buys, incremented on sells
 - Virtual position tracking — buys accumulate, sells reduce positions
+- **Commission support:** `commission_pct` constructor param (from `data_config`), fee deducted from cash on every fill, tracked as `total_fees` in `get_balances()`
 - Quantity clipping: if order exceeds available cash, clips to max affordable
 - Sell validation: cannot sell more than current position
 - Publishes `OrderUpdate` fills on session-namespaced Redis channel

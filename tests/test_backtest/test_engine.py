@@ -114,6 +114,49 @@ class TestVirtualPortfolio:
 # Rolling buffer helpers
 # ---------------------------------------------------------------------------
 
+class TestVirtualPortfolioCommission:
+    def test_zero_commission_no_fee(self):
+        p = _VirtualPortfolio(10000, ["AAPL"], commission_pct=0.0)
+        p.update_prices({"AAPL": 100.0})
+        p.rebalance(np.array([1.0]), "2024-01-01")
+        assert p.total_fees == 0.0
+
+    def test_commission_deducted_on_buy(self):
+        p = _VirtualPortfolio(10000, ["AAPL"], commission_pct=1.0)  # 1%
+        p.update_prices({"AAPL": 100.0})
+        trades = p.rebalance(np.array([0.5]), "2024-01-01")
+        buy_trades = [t for t in trades if t.side == "buy"]
+        assert len(buy_trades) == 1
+        assert buy_trades[0].fee > 0
+        assert p.total_fees > 0
+        # With 1% fee on ~$5000 trade, fee ~ $50
+        assert p.total_fees == pytest.approx(buy_trades[0].value * 0.01, abs=1)
+
+    def test_commission_deducted_on_sell(self):
+        p = _VirtualPortfolio(10000, ["AAPL"], commission_pct=1.0)
+        p.update_prices({"AAPL": 100.0})
+        p.rebalance(np.array([1.0]), "2024-01-01")
+        fees_after_buy = p.total_fees
+        # Now sell everything
+        trades = p.rebalance(np.array([0.0]), "2024-01-02")
+        sell_trades = [t for t in trades if t.side == "sell"]
+        assert len(sell_trades) >= 1
+        assert p.total_fees > fees_after_buy
+
+    def test_roundtrip_with_commission_loses_money(self):
+        """Buy then sell at same price with commission should lose money."""
+        p = _VirtualPortfolio(10000, ["AAPL"], commission_pct=0.5)  # 0.5%
+        p.update_prices({"AAPL": 100.0})
+        p.rebalance(np.array([1.0]), "2024-01-01")
+        p.rebalance(np.array([0.0]), "2024-01-02")
+        # Should have less than started due to fees
+        assert p.cash < 10000
+        assert p.total_fees > 0
+        # Equity loss should roughly equal total fees
+        loss = 10000 - p.get_equity()
+        assert loss == pytest.approx(p.total_fees, abs=1)
+
+
 class TestRollingBuffers:
     def test_append_and_snapshot(self):
         symbols = ["A", "B"]
@@ -174,10 +217,10 @@ class TestComputeMetrics:
 
     def test_trade_win_rate(self):
         trades = [
-            BacktestTrade("2024-01-01", "AAPL", "buy", 10, 100, 1000, 9000, 10000),
-            BacktestTrade("2024-01-02", "AAPL", "sell", 10, 120, 1200, 10200, 10200),
-            BacktestTrade("2024-01-03", "AAPL", "buy", 10, 110, 1100, 9100, 10200),
-            BacktestTrade("2024-01-04", "AAPL", "sell", 10, 100, 1000, 10100, 10100),
+            BacktestTrade("2024-01-01", "AAPL", "buy", 10, 100, 1000, 0, 9000, 10000),
+            BacktestTrade("2024-01-02", "AAPL", "sell", 10, 120, 1200, 0, 10200, 10200),
+            BacktestTrade("2024-01-03", "AAPL", "buy", 10, 110, 1100, 0, 9100, 10200),
+            BacktestTrade("2024-01-04", "AAPL", "sell", 10, 100, 1000, 0, 10100, 10100),
         ]
         curve = [
             {"date": "2024-01-01", "equity": 10000},
@@ -190,6 +233,16 @@ class TestComputeMetrics:
         assert m.winning_trades == 1
         assert m.losing_trades == 1
         assert m.win_rate_pct == 50.0
+
+    def test_fees_metrics(self):
+        """total_fees and fees_pct are populated from portfolio fees."""
+        curve = [
+            {"date": "2024-01-01", "equity": 10000},
+            {"date": "2024-01-02", "equity": 9950},
+        ]
+        m = _compute_metrics(curve, [], 10000, total_fees=50.0)
+        assert m.total_fees == 50.0
+        assert m.fees_pct == pytest.approx(0.5)  # 50 / 10000 * 100
 
     def test_sharpe_ratio_positive(self):
         # Steady gains -> positive Sharpe

@@ -27,6 +27,7 @@ class SimulationAdapter(BaseExchangeAdapter):
         exchange: Exchange,
         redis: RedisClient,
         strategy_mode: str = "rebalance",
+        commission_pct: float = 0.0,
     ):
         self._session_id = session_id
         self._exchange = exchange
@@ -34,6 +35,8 @@ class SimulationAdapter(BaseExchangeAdapter):
         self._cash = starting_budget
         self._starting_budget = starting_budget
         self._strategy_mode = strategy_mode
+        self._commission_rate = commission_pct / 100.0  # convert % to fraction
+        self._total_fees: float = 0.0
         self._positions: dict[str, dict] = {}  # {symbol: {quantity, avg_price}}
         self._last_prices: dict[str, float] = {}
         self._orders: dict[str, dict] = {}  # {order_id: order_info}
@@ -137,12 +140,18 @@ class SimulationAdapter(BaseExchangeAdapter):
                     self._positions[symbol] = pos
                     quantity = sell_qty
 
+            # Apply commission fee (deducted from cash regardless of buy/sell)
+            fee = abs(quantity * price) * self._commission_rate
+            self._cash -= fee
+            self._total_fees += fee
+
             # Record the order
             self._orders[order_id] = {
                 "symbol": symbol,
                 "side": order_request.side.value,
                 "quantity": quantity,
                 "price": price,
+                "fee": fee,
                 "status": OrderStatus.FILLED.value,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
@@ -193,6 +202,7 @@ class SimulationAdapter(BaseExchangeAdapter):
             "cash": self._cash,
             "total_equity": total_value,
             "positions_value": total_value - self._cash,
+            "total_fees": self._total_fees,
         }
 
     async def get_positions(self) -> list:

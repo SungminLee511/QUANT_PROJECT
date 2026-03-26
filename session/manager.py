@@ -44,6 +44,7 @@ DEFAULT_DATA_CONFIG = {
     "schedule_mode": "always_on",
     "strategy_mode": "rebalance",
     "short_loss_limit_pct": 1.0,
+    "commission_pct": 0.0,
     "fields": {
         "price": {"enabled": True, "lookback": 20, "source": "yfinance"},
     },
@@ -360,12 +361,14 @@ class SessionManager:
 
         # 3. Order Router — sim or real
         if st.is_simulation:
+            commission_pct = data_config.get("commission_pct", 0.0)
             sim_adapter = SimulationAdapter(
                 session_id=sid,
                 starting_budget=starting_budget,
                 exchange=exchange,
                 redis=self._redis,
                 strategy_mode=pipeline.strategy_mode,
+                commission_pct=commission_pct,
             )
             pipeline.sim_adapter = sim_adapter
             router = OrderRouter(session_config, self._redis, sim_adapter=sim_adapter, session_id=sid)
