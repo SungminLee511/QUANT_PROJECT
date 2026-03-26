@@ -241,6 +241,15 @@ class SessionManager:
             return True
         except Exception:
             logger.exception("Failed to start session %s", session_id)
+            # BUG-18 fix: cancel any orphaned tasks and remove pipeline from dict
+            for task in pipeline.tasks:
+                task.cancel()
+            for task in pipeline.tasks:
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+            self._pipelines.pop(session_id, None)
             await self._set_session_status(session_id, "error")
             await self._publish_log(session_id, "session_event", "Session failed to start", level="error")
             return False

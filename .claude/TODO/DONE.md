@@ -281,3 +281,10 @@
 
 **Fix:** Instantiated `PnLCalculator` in `PortfolioTracker.__init__`. `_on_order_update` now calls `_pnl.record_close()` on SELL fills with entry/exit prices and delta quantity. Published portfolio state now includes `realized_pnl`, `total_closed_trades`, and `win_rate` from P&L summary.
 **Date:** 2026-03-26
+
+---
+
+## BUG-18: Pipeline leak on `start_session` failure — HIGH (was)
+
+**Fix:** In `start_session`'s except block, cancel all orphaned asyncio tasks on the pipeline and remove the pipeline from `self._pipelines` dict before setting error status. Prevents resource leaks from partially-created tasks (collector, router, portfolio tracker, sim price listener).
+**Date:** 2026-03-26

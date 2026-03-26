@@ -20,15 +20,7 @@
 
 ---
 
-## BUG-18: Pipeline leak on `start_session` failure — HIGH
-
-**File:** `session/manager.py:226-246`
-
-Pipeline is added to `self._pipelines` at line 227 *before* `_start_pipeline` runs. If `_start_pipeline` raises (caught at line 242), status is set to "error" but the pipeline is never removed from the dict. Any partially-created asyncio tasks in the pipeline are orphaned (never cancelled).
-
-**Impact:** Resource leak. Orphaned tasks may keep running (e.g., sim price listener, data collector).
-
-**Fix:** In the except block, add `self._pipelines.pop(session_id, None)` and cancel any tasks on the pipeline.
+## ~~BUG-18: Pipeline leak on `start_session` failure — FIXED~~
 
 ---
 
