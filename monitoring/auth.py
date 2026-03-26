@@ -11,6 +11,32 @@ SESSION_COOKIE = "qt_session"
 
 # In-memory session store: {token: {"username": str, "created_at": float}}
 _sessions: dict[str, dict] = {}
+_last_cleanup: float = 0.0
+_CLEANUP_INTERVAL: float = 300.0  # seconds between automatic cleanups
+
+
+def cleanup_expired_sessions() -> int:
+    """Remove all expired sessions. Returns number removed."""
+    now = time.time()
+    expired = [
+        token for token, sess in _sessions.items()
+        if now - sess["created_at"] > sess["ttl"]
+    ]
+    for token in expired:
+        _sessions.pop(token, None)
+    return len(expired)
+
+
+def _maybe_cleanup() -> None:
+    """Run cleanup at most once every _CLEANUP_INTERVAL seconds."""
+    global _last_cleanup
+    now = time.time()
+    if now - _last_cleanup > _CLEANUP_INTERVAL:
+        _last_cleanup = now
+        removed = cleanup_expired_sessions()
+        if removed:
+            import logging
+            logging.getLogger(__name__).debug("Cleaned up %d expired auth sessions", removed)
 
 
 def create_session(response: Response, username: str, ttl_hours: int = 24) -> str:
@@ -33,6 +59,7 @@ def create_session(response: Response, username: str, ttl_hours: int = 24) -> st
 
 def get_current_user(request: Request) -> str | None:
     """Return the username from the session cookie, or None if not logged in."""
+    _maybe_cleanup()
     token = request.cookies.get(SESSION_COOKIE)
     if not token or token not in _sessions:
         return None

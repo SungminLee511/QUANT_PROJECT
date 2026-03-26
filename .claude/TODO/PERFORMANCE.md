@@ -6,14 +6,6 @@
 
 ## Performance
 
-### PERF-4: Auth session store never cleaned — LOW
-
-**File:** `monitoring/auth.py`
-
-`_sessions` dict grows unbounded. Expired tokens only removed on access.
-
-**Fix:** Add periodic cleanup task or use TTL cache (e.g. `cachetools.TTLCache`).
-
 ### PERF-5: Log buffers grow per-session forever — LOW
 
 **File:** `monitoring/logs.py`

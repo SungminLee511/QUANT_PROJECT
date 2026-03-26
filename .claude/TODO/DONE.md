@@ -127,3 +127,10 @@
 
 **Fix:** Changed `lazy="selectin"` to `lazy="select"` on all 4 TradingSession relationships (trades, positions, orders, equity_snapshots) in `db/models.py`. No code accesses these relationships on session objects.
 **Date:** 2026-03-26
+
+---
+
+## PERF-4: Auth session store never cleaned — LOW (was)
+
+**Fix:** Added `cleanup_expired_sessions()` and amortized `_maybe_cleanup()` (every 5 min) called from `get_current_user()` in `monitoring/auth.py`. Expired tokens now pruned automatically.
+**Date:** 2026-03-26
