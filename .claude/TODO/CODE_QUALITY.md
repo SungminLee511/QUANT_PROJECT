@@ -6,10 +6,6 @@
 
 ## Code Quality
 
-### CQ-3: Dead code — `data/custom_data.py` — LOW
-
-The file exists but the V2 architecture loads custom data dynamically via `collector.load_custom_data_functions()`. Verify whether this file is actually imported anywhere or if it's V1 leftover. If unused, delete.
-
 ### CQ-4: Incorrect type hint — LOW
 
 **File:** `data/collector.py` (~line 48)

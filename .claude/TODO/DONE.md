@@ -64,3 +64,10 @@
 
 **Fix:** Extracted `ValidationResult` dataclass to `shared/schemas.py`. Both `strategy/validator_v2.py` and `strategy/custom_validator.py` now import from there.
 **Date:** 2026-03-26
+
+---
+
+## CQ-3: Dead code — `data/custom_data.py` — LOW (was)
+
+**Fix:** Verified file is never imported anywhere. V2 uses `collector.load_custom_data_functions()` for dynamic custom data. Deleted the unused V1 file.
+**Date:** 2026-03-26
