@@ -1,7 +1,220 @@
 # Bugs — Open Issues
 
-> Last verified against code: 2026-03-26. All bugs resolved — see DONE.md.
+> Full audit: 2026-03-26. Covers all directories (data, strategy, execution, portfolio, session, monitoring, shared, db, backtest).
 
 ---
 
-(No open bugs)
+## BUG-14: `close` field returns yesterday's close across all sources — HIGH
+
+**Files:** `data/sources/yfinance_source.py:131-133`, `data/sources/yfinance_source.py:182-183`, `data/sources/binance_source.py:80`
+
+In yfinance: `close` maps to `_prev_close(sym)` (previous session's close, not today's). In binance: `close` maps to `prevClosePrice`. Meanwhile `price` correctly returns the current/latest price. A user enabling the `close` field expects the latest close, not yesterday's.
+
+**Impact:** Strategies using `data["close"]` get stale data — every trading signal based on close is wrong.
+
+**Fix:** Use current close (same as `price`) for the `close` field. If "previous close" is needed, add a separate `prev_close` field.
+
+---
+
+## BUG-15: Validator ALLOWED_IMPORTS doesn't match executor _IMPORT_WHITELIST — HIGH
+
+**Files:** `strategy/validator_v2.py:14-20` vs `strategy/executor.py:140`
+
+Validator allows: `datetime, decimal, typing, logging, pandas` (plus shared ones).
+Executor allows: `numpy, math, statistics, collections, itertools, functools` only.
+
+Code using `import pandas` or `import datetime` passes validation but crashes at runtime with `ImportError`. The executor catches this and returns zero weights, silently flattening the portfolio.
+
+**Impact:** Validated strategy code fails silently at runtime. User thinks deploy succeeded.
+
+**Fix:** Synchronize the two lists — either add the extra modules to executor's whitelist, or remove them from the validator.
+
+---
+
+## BUG-16: Partial fill double-counting in PortfolioTracker — HIGH
+
+**File:** `portfolio/tracker.py:89-96`
+
+`_on_order_update` adds `update.filled_qty` to position quantity on each update. Binance and Alpaca send **cumulative** filled quantities (e.g., first update: filled_qty=5, second: filled_qty=8 meaning 3 more). The tracker adds 5, then 8 → position shows 13 instead of correct 8.
+
+**Impact:** Position quantities drift upward on every partial fill. Cash accounting also wrong.
+
+**Fix:** Track last-seen `filled_qty` per `order_id` in a dict. Only apply the delta: `update.filled_qty - last_known`.
+
+---
+
+## BUG-17: `_persist_order` queries by `external_id=None` for failed orders — HIGH
+
+**File:** `execution/router.py:244-246`
+
+When an order fails during `place_order()`, `external_id` is still `None`. The persist query `WHERE external_id == None` generates `IS NULL` in SQL, potentially matching ALL previously failed orders with NULL external_id, overwriting their records.
+
+**Impact:** Could corrupt other failed orders' DB records. Or create duplicates depending on race timing.
+
+**Fix:** When `external_id is None`, skip the SELECT and always INSERT using `order.order_id` as the key.
+
+---
+
+## BUG-18: Pipeline leak on `start_session` failure — HIGH
+
+**File:** `session/manager.py:226-246`
+
+Pipeline is added to `self._pipelines` at line 227 *before* `_start_pipeline` runs. If `_start_pipeline` raises (caught at line 242), status is set to "error" but the pipeline is never removed from the dict. Any partially-created asyncio tasks in the pipeline are orphaned (never cancelled).
+
+**Impact:** Resource leak. Orphaned tasks may keep running (e.g., sim price listener, data collector).
+
+**Fix:** In the except block, add `self._pipelines.pop(session_id, None)` and cancel any tasks on the pipeline.
+
+---
+
+## BUG-19: `update_session` silently ignores `strategy_code`, `data_config`, `custom_data_code` — HIGH
+
+**File:** `session/manager.py:174-203`
+
+The method only handles `name, symbols, api_key, api_secret, testnet, starting_budget`. The sessions REST API whitelist (sessions.py:66) includes `strategy_code, data_config, custom_data_code`, but `update_session` discards them. PUT returns `{"updated": True}` but nothing was saved.
+
+**Impact:** REST API for updating strategy code is silently broken. (Editor deploy works via direct DB write, so the UI path is unaffected.)
+
+**Fix:** Add handling for the three fields in `update_session`.
+
+---
+
+## BUG-20: Binance `cancel_order` missing required `symbol` parameter — HIGH
+
+**File:** `execution/binance_adapter.py:90-98`
+
+Binance REST API requires `symbol` for order cancellation. The method only receives `external_order_id` (matching the base class interface). Every cancel attempt will fail with a Binance API error.
+
+**Impact:** Cannot cancel orders on Binance live trading. All cancels silently fail (returns False).
+
+**Fix:** Maintain an internal `{order_id: symbol}` map populated during `place_order`, and look up the symbol in `cancel_order`.
+
+---
+
+## BUG-21: Alpaca adapter blocks event loop with synchronous HTTP calls — HIGH
+
+**File:** `execution/alpaca_adapter.py:61,83,92,117,127`
+
+The Alpaca `TradingClient` is synchronous. Calls like `submit_order()`, `cancel_order_by_id()`, `get_order_by_id()` block the entire asyncio event loop for 100-500ms each. During this time, all other coroutines are stalled (Redis messages, price updates, other sessions).
+
+**Impact:** Cascading latency across all sessions. Missed messages, delayed order execution.
+
+**Fix:** Wrap all sync `self._client.*` calls in `await asyncio.to_thread(...)`.
+
+---
+
+## BUG-22: Stale PubSub object reused after Redis connection failure — HIGH
+
+**File:** `shared/redis_client.py:117-128`
+
+The CONC-3 retry loop re-subscribes using the same `self._pubsub` object after a connection error. If the underlying connection is dead, the PubSub object is stale and `.subscribe()` may also fail, causing an infinite retry loop that never recovers.
+
+**Impact:** After a Redis connection blip, pub/sub may never recover. The system looks running but no messages flow (ticks, signals, orders all dead).
+
+**Fix:** Create a fresh PubSub object before re-subscribing: `self._pubsub = self._redis.pubsub()`.
+
+---
+
+## BUG-23: `float("inf")` profit factor breaks JSON serialization — MEDIUM
+
+**File:** `backtest/engine.py:358`
+
+When wins > 0 but losses == 0, `profit_factor = float("inf")`. Python's `json.dumps(float("inf"))` raises `ValueError`.
+
+**Impact:** Backtest API returns 500 error when a backtest has only winning trades.
+
+**Fix:** Use a large finite number (e.g., `9999.99`) or `None`.
+
+---
+
+## BUG-24: Backtest `day_change_pct` field never computed — MEDIUM
+
+**File:** `backtest/engine.py:442-445`
+
+`col_to_field` has no mapping for `day_change_pct`, and there's no special-case computation (unlike `vwap`). If enabled in data config, the buffer stays at zero/NaN forever.
+
+**Impact:** Strategies depending on `day_change_pct` get all zeros in backtests, producing incorrect signals.
+
+**Fix:** Compute from consecutive close values per symbol (requires tracking previous close per bar).
+
+---
+
+## BUG-25: Backtest fills missing data with 0.0 instead of NaN — MEDIUM
+
+**File:** `backtest/engine.py:506-507`
+
+When a symbol has no data for a given date and no prior buffer value, `0.0` is used. A price of 0.0 silently corrupts strategy calculations.
+
+**Impact:** Strategies see 0.0 prices for missing symbols, producing nonsensical weights.
+
+**Fix:** Use `np.nan` and ensure `_build_data_snapshot` handles NaN (e.g., skip symbols or require all non-NaN).
+
+---
+
+## BUG-26: `avg_price` never persisted to DB on order updates — MEDIUM
+
+**File:** `execution/router.py:250-253`
+
+When updating an existing order record, only `status`, `filled_quantity`, and `updated_at` are set. `avg_price` is never written. New inserts also omit it.
+
+**Impact:** Order history in DB always shows 0/NULL for fill price. Dashboard/audit trail missing critical info.
+
+**Fix:** Add `existing.avg_price = order.avg_price` in update branch, and `avg_price=order.avg_price` in insert.
+
+---
+
+## BUG-27: `PnLCalculator.record_close` never called — realized P&L always 0 — MEDIUM
+
+**File:** `portfolio/tracker.py` (entire file), `portfolio/pnl.py`
+
+`PortfolioTracker._on_order_update` handles SELL fills by updating positions and cash, but never calls `PnLCalculator.record_close()`. The PnLCalculator exists but is completely disconnected from actual trades.
+
+**Impact:** All realized P&L metrics (total, win rate, summary) are always zero. Dashboard P&L reporting is meaningless.
+
+**Fix:** Call `self._pnl.record_close(symbol, qty, entry_price, fill_price, "sell")` when processing SELL fills.
+
+---
+
+## BUG-28: Default strategy file `read_text()` unguarded — crashes if file missing — MEDIUM
+
+**Files:** `monitoring/backtest.py:149`, `monitoring/editor.py:65,74,214`
+
+Multiple endpoints call `DEFAULT_STRATEGY.read_text()` without existence check. If `strategy/examples/momentum_v2.py` is deleted/renamed, these return 500 errors.
+
+**Impact:** Editor page, backtest page, and reset endpoint all crash with FileNotFoundError.
+
+**Fix:** Add `if DEFAULT_STRATEGY.exists()` guard, or try/except with a fallback.
+
+---
+
+## BUG-29: Custom data validator missing `open` in FORBIDDEN_NAMES — MEDIUM
+
+**File:** `strategy/custom_validator.py:25-30`
+
+`validator_v2.py` blocks `open` but `custom_validator.py` does not. Custom data functions can reference `open()` to read/write files on the server.
+
+**Impact:** Custom data code can access the filesystem (read/write arbitrary files).
+
+**Fix:** Add `"open"` to FORBIDDEN_NAMES in `custom_validator.py`.
+
+---
+
+## BUG-30: `check_position_size` approves on zero/negative equity — MEDIUM
+
+**File:** `risk/limits.py:27-28`
+
+When `total_equity <= 0` or `current_price <= 0`, returns `(True, "")` — allows the trade. This bypasses position size limits when portfolio state is unavailable or corrupted.
+
+**Impact:** Position size limits ineffective when state is missing. (V1 legacy — only affects live sessions using V1 risk checks.)
+
+**Fix:** Return `(False, "Cannot evaluate: equity or price unavailable")` instead.
+
+---
+
+## BUG-31: Non-numeric port env var silently passes through as string — MEDIUM
+
+**Files:** `shared/config.py:56-58`, `db/session.py:19-21`
+
+If `QT_DATABASE_PORT` is set to a non-numeric string, `int()` cast fails silently (bare `except: pass`). The string flows through to the DB URL, causing an opaque connection error.
+
+**Fix:** Log a warning or raise on parse failure instead of silent pass.

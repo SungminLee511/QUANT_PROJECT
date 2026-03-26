@@ -850,8 +850,8 @@ See `.claude/TODO/` for detailed open issues. Summary:
 
 | File | Category | Critical/High Items |
 |------|----------|-------------------|
-| `BUGS.md` | Logic errors | All resolved — see DONE.md |
-| `SECURITY.md` | Security | All resolved — see DONE.md |
+| `BUGS.md` | Logic errors (Round 2) | 18 new bugs: `close` field stale data, partial fill double-count, persist order corruption, pipeline leak, Binance cancel broken, Alpaca blocks event loop, validator/executor mismatch, PubSub stale on reconnect |
+| `SECURITY.md` | Security | Round 1 resolved. Round 2: custom validator missing `open` block |
 | `CONCURRENCY.md` | Thread safety | CONC-2/4 accepted (single-worker constraints) |
 | `PERFORMANCE.md` | Perf + errors | All resolved — see DONE.md |
 | `CODE_QUALITY.md` | Code + arch | ARCH-7 accepted (single-worker constraint) |
