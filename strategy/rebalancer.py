@@ -79,6 +79,13 @@ class WeightRebalancer:
             qty = abs(diff_value) / price
             side = Side.BUY if diff_value > 0 else Side.SELL
 
+            # Cap sell quantity to current position — prevents short-sell attempts
+            # on adapters that don't support shorting (e.g. SimulationAdapter).
+            if side == Side.SELL:
+                qty = min(qty, max(current_qty, 0.0))
+                if qty * price < MIN_ORDER_VALUE:
+                    continue
+
             order = OrderRequest(
                 symbol=symbol,
                 side=side,
