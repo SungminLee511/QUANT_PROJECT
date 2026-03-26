@@ -50,3 +50,10 @@
 
 **Fix:** Replaced `except: pass` with `logger.warning()` including exc_info in `risk/manager.py` `_refresh_portfolio_state()`.
 **Date:** 2026-03-26
+
+---
+
+## CONC-1: SimulationAdapter state not thread-safe — HIGH (was)
+
+**Fix:** Added `asyncio.Lock` guarding `_cash`, `_positions`, `_last_prices` in both `_on_price_update` and `place_order` in `execution/sim_adapter.py`.
+**Date:** 2026-03-26

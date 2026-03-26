@@ -4,6 +4,7 @@ Used for both Binance Sim and Alpaca Sim sessions. Tracks a virtual portfolio
 (cash + positions) and fills all market orders instantly at the last known price.
 """
 
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -34,6 +35,7 @@ class SimulationAdapter(BaseExchangeAdapter):
         self._positions: dict[str, dict] = {}  # {symbol: {quantity, avg_price}}
         self._last_prices: dict[str, float] = {}
         self._orders: dict[str, dict] = {}  # {order_id: order_info}
+        self._lock = asyncio.Lock()  # Guards _cash, _positions, _last_prices
         self._market_channel = session_channel(session_id, "market:ticks")
         self._running = False
 
@@ -56,77 +58,79 @@ class SimulationAdapter(BaseExchangeAdapter):
         symbol = data.get("symbol")
         price = data.get("price") or data.get("close")
         if symbol and price:
-            self._last_prices[symbol] = float(price)
+            async with self._lock:
+                self._last_prices[symbol] = float(price)
 
     async def place_order(self, order_request: OrderRequest) -> str:
         """Instantly fill the order at last known market price."""
-        order_id = f"sim-{uuid.uuid4().hex[:12]}"
-        symbol = order_request.symbol
-        price = self._last_prices.get(symbol, 0)
+        async with self._lock:
+            order_id = f"sim-{uuid.uuid4().hex[:12]}"
+            symbol = order_request.symbol
+            price = self._last_prices.get(symbol, 0)
 
-        if price <= 0:
-            logger.warning(
-                "SimAdapter: no price for %s, rejecting order (session=%s)",
+            if price <= 0:
+                logger.warning(
+                    "SimAdapter: no price for %s, rejecting order (session=%s)",
+                    symbol,
+                    self._session_id,
+                )
+                raise ValueError(f"No market price available for {symbol}")
+
+            quantity = order_request.quantity
+            cost = price * quantity
+
+            if order_request.side == Side.BUY:
+                if cost > self._cash:
+                    # Adjust quantity to what we can afford
+                    quantity = self._cash / price
+                    if quantity <= 0:
+                        raise ValueError(f"Insufficient cash for {symbol}")
+                    cost = price * quantity
+
+                # Update sim portfolio
+                pos = self._positions.get(symbol, {"quantity": 0.0, "avg_price": 0.0})
+                old_value = pos["quantity"] * pos["avg_price"]
+                new_value = quantity * price
+                new_qty = pos["quantity"] + quantity
+                pos["avg_price"] = (old_value + new_value) / new_qty if new_qty > 0 else 0
+                pos["quantity"] = new_qty
+                self._positions[symbol] = pos
+                self._cash -= cost
+
+            elif order_request.side == Side.SELL:
+                pos = self._positions.get(symbol, {"quantity": 0.0, "avg_price": 0.0})
+                sell_qty = min(quantity, pos["quantity"])
+                if sell_qty <= 0:
+                    raise ValueError(f"No position in {symbol} to sell")
+                pos["quantity"] -= sell_qty
+                self._cash += sell_qty * price
+                if pos["quantity"] <= 0.0001:
+                    pos["quantity"] = 0.0
+                    pos["avg_price"] = 0.0
+                self._positions[symbol] = pos
+                quantity = sell_qty
+
+            # Record the order
+            self._orders[order_id] = {
+                "symbol": symbol,
+                "side": order_request.side.value,
+                "quantity": quantity,
+                "price": price,
+                "status": OrderStatus.FILLED.value,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+            logger.info(
+                "SimAdapter FILLED: %s %s %.6f @ %.2f (session=%s, cash=%.2f)",
+                order_request.side.value,
                 symbol,
+                quantity,
+                price,
                 self._session_id,
+                self._cash,
             )
-            raise ValueError(f"No market price available for {symbol}")
 
-        quantity = order_request.quantity
-        cost = price * quantity
-
-        if order_request.side == Side.BUY:
-            if cost > self._cash:
-                # Adjust quantity to what we can afford
-                quantity = self._cash / price
-                if quantity <= 0:
-                    raise ValueError(f"Insufficient cash for {symbol}")
-                cost = price * quantity
-
-            # Update sim portfolio
-            pos = self._positions.get(symbol, {"quantity": 0.0, "avg_price": 0.0})
-            old_value = pos["quantity"] * pos["avg_price"]
-            new_value = quantity * price
-            new_qty = pos["quantity"] + quantity
-            pos["avg_price"] = (old_value + new_value) / new_qty if new_qty > 0 else 0
-            pos["quantity"] = new_qty
-            self._positions[symbol] = pos
-            self._cash -= cost
-
-        elif order_request.side == Side.SELL:
-            pos = self._positions.get(symbol, {"quantity": 0.0, "avg_price": 0.0})
-            sell_qty = min(quantity, pos["quantity"])
-            if sell_qty <= 0:
-                raise ValueError(f"No position in {symbol} to sell")
-            pos["quantity"] -= sell_qty
-            self._cash += sell_qty * price
-            if pos["quantity"] <= 0.0001:
-                pos["quantity"] = 0.0
-                pos["avg_price"] = 0.0
-            self._positions[symbol] = pos
-            quantity = sell_qty
-
-        # Record the order
-        self._orders[order_id] = {
-            "symbol": symbol,
-            "side": order_request.side.value,
-            "quantity": quantity,
-            "price": price,
-            "status": OrderStatus.FILLED.value,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-
-        logger.info(
-            "SimAdapter FILLED: %s %s %.6f @ %.2f (session=%s, cash=%.2f)",
-            order_request.side.value,
-            symbol,
-            quantity,
-            price,
-            self._session_id,
-            self._cash,
-        )
-
-        return order_id
+            return order_id
 
     async def cancel_order(self, external_order_id: str) -> bool:
         """Sim orders are instant fills — nothing to cancel."""

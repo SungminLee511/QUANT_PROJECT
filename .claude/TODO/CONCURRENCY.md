@@ -4,16 +4,6 @@
 
 ---
 
-## CONC-1: SimulationAdapter state not thread-safe — HIGH
-
-**File:** `execution/sim_adapter.py`
-
-`_cash`, `_positions`, `_last_prices` modified from both `_on_price_update` (Redis pubsub) and `place_order` (order path). Context switch between check and mutation could cause negative cash.
-
-**Fix:** Add `asyncio.Lock` to guard the critical section in `place_order`.
-
----
-
 ## CONC-2: `_sse_queues` concurrent modification — MEDIUM
 
 **File:** `monitoring/logs.py`
