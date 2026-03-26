@@ -13,6 +13,7 @@ from monitoring.auth import (
     check_credentials, create_session, destroy_session,
     get_csrf_token, get_current_user, require_auth, validate_csrf,
 )
+from monitoring.rate_limit import RateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +115,20 @@ def create_app(config: dict) -> FastAPI:
 
     app = FastAPI(title="Quant Trader", lifespan=lifespan)
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+    # ── Rate limiting middleware (ARCH-5) ────────────────────────────
+    # Note: middleware order is reversed in Starlette (last registered = first to run).
+    # Rate limiter is registered first so CSRF runs before it (rate limit is outermost).
+
+    _rate_limiter = RateLimiter()
+
+    @app.middleware("http")
+    async def rate_limit_middleware(request: Request, call_next):
+        """Reject requests that exceed per-route rate limits."""
+        err = _rate_limiter.check(request)
+        if err is not None:
+            return err
+        return await call_next(request)
 
     # ── CSRF middleware (ARCH-3) ─────────────────────────────────────
 

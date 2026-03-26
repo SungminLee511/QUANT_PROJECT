@@ -139,6 +139,7 @@ QUANT_PROJECT/
 │   ├── logs.py                        # Logs page: SSE streaming, in-memory ring buffer, per-session log viewer
 │   ├── settings.py                    # Settings API: global API key management, .env read/write
 │   ├── sessions.py                    # Sessions REST API: CRUD + start/stop endpoints
+│   ├── rate_limit.py                  # In-memory fixed-window rate limiter (ARCH-5), no external deps
 │   ├── logger.py                      # structlog: JSON (prod) or console (dev) output
 │   └── templates/
 │       ├── base.html                 # Shared layout: nav bar + session sidebar + create modal + toast
@@ -836,6 +837,8 @@ See **[BUG_FIX_GUIDE.md](BUG_FIX_GUIDE.md)** for Docker-era bugs and runtime fix
 - **Portfolio state includes `positions` list** — `_publish_state_loop` publishes `positions: [{symbol, quantity, avg_entry_price}]` for rebalancer consumption.
 - **Legacy scripts** (`run_data.py`, `run_strategy.py`, `run_execution.py`) still exist but are unused — `run_monitor.py` is the sole entry point.
 - **Backtesting is lightweight** — pure in-memory (no DB, no Redis), uses same rolling buffer format as live.
+- **Backtest thread pool** — `run_backtest_async()` uses a dedicated `ThreadPoolExecutor` (max 2) + semaphore, not the default pool. Prevents starving live session tasks.
+- **Rate limiting** — in-memory fixed-window limiter (`monitoring/rate_limit.py`) protects expensive endpoints (backtest run, session CRUD, editor deploy). No external deps.
 
 ---
 
@@ -845,11 +848,11 @@ See `.claude/TODO/` for detailed open issues. Summary:
 
 | File | Category | Critical/High Items |
 |------|----------|-------------------|
-| `BUGS.md` | Logic errors | **OrderRequest metadata crash (CRITICAL)**, position size check no-op |
-| `SECURITY.md` | Security | exec() sandbox bypass, plaintext creds, API key exposure |
-| `CONCURRENCY.md` | Thread safety | SimAdapter race condition, Redis listener no-reconnect |
-| `PERFORMANCE.md` | Perf + errors | N+1 yfinance calls, eager DB loading, silent risk failures |
-| `CODE_QUALITY.md` | Code + arch | Duplicate classes, dead code, DB password URL encoding |
+| `BUGS.md` | Logic errors | All resolved — see DONE.md |
+| `SECURITY.md` | Security | All resolved — see DONE.md |
+| `CONCURRENCY.md` | Thread safety | CONC-2/3/4 remain (low priority, scaling constraints) |
+| `PERFORMANCE.md` | Perf + errors | All resolved — see DONE.md |
+| `CODE_QUALITY.md` | Code + arch | ARCH-7 remains (multi-worker globals, low priority) |
 
 ### Completed Features
 - ~~Universe Presets for Session Creation~~ — DONE

@@ -204,3 +204,17 @@
 
 **Fix:** Changed `_listen()` in `shared/redis_client.py` to dispatch callbacks as `asyncio.create_task()` instead of awaiting sequentially. Slow subscribers no longer block other sessions' message processing.
 **Date:** 2026-03-26
+
+---
+
+## ARCH-5: No rate limiting on API endpoints — MEDIUM (was)
+
+**Fix:** Added lightweight in-memory fixed-window rate limiter (`monitoring/rate_limit.py`). Configured per-route limits for expensive endpoints: backtest run (5/min), session CRUD (30/min), editor deploy (10/min), validation (20/min). Wired as outermost middleware in `monitoring/app.py`. No external dependencies.
+**Date:** 2026-03-26
+
+---
+
+## ARCH-6: Backtest blocks main thread pool — MEDIUM (was)
+
+**Fix:** Changed `run_backtest_async()` in `backtest/engine.py` to use a dedicated `ThreadPoolExecutor` (max 2 workers) instead of the default thread pool. Added `asyncio.Semaphore` to cap concurrent backtests. Queued backtests log a waiting message.
+**Date:** 2026-03-26

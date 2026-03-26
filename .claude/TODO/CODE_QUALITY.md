@@ -10,20 +10,6 @@
 
 ## Architecture
 
-### ARCH-5: No rate limiting on API endpoints — MEDIUM
-
-Backtest endpoint spawns blocking yfinance downloads. Concurrent abuse could exhaust thread pool.
-
-**Fix:** Add rate limiting middleware (e.g. `slowapi`).
-
-### ARCH-6: Backtest blocks main thread pool — MEDIUM
-
-**File:** `backtest/engine.py`
-
-`run_in_executor(None, ...)` uses default thread pool. Multiple concurrent backtests can starve live sessions.
-
-**Fix:** Use a dedicated thread pool for backtests with max concurrency.
-
 ### ARCH-7: Module-level globals prevent multi-worker — LOW
 
 **Files:** `monitoring/logs.py`, `monitoring/auth.py`

@@ -544,6 +544,35 @@ def run_backtest(
     return result
 
 
+_BACKTEST_POOL: "concurrent.futures.ThreadPoolExecutor | None" = None
+_BACKTEST_SEMAPHORE: "asyncio.Semaphore | None" = None
+
+# Max concurrent backtests — prevents starving the default thread pool
+# used by live sessions for DB queries, yfinance calls, etc.
+MAX_CONCURRENT_BACKTESTS = 2
+
+
+def _get_backtest_pool() -> "concurrent.futures.ThreadPoolExecutor":
+    """Lazily create a dedicated thread pool for backtests."""
+    global _BACKTEST_POOL
+    if _BACKTEST_POOL is None:
+        import concurrent.futures
+        _BACKTEST_POOL = concurrent.futures.ThreadPoolExecutor(
+            max_workers=MAX_CONCURRENT_BACKTESTS,
+            thread_name_prefix="backtest",
+        )
+    return _BACKTEST_POOL
+
+
+def _get_backtest_semaphore() -> "asyncio.Semaphore":
+    """Lazily create a semaphore to cap concurrent backtests."""
+    global _BACKTEST_SEMAPHORE
+    if _BACKTEST_SEMAPHORE is None:
+        import asyncio
+        _BACKTEST_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_BACKTESTS)
+    return _BACKTEST_SEMAPHORE
+
+
 async def run_backtest_async(
     strategy_code: str,
     symbols: list[str],
@@ -553,18 +582,31 @@ async def run_backtest_async(
     interval: str = "1d",
     data_config: dict | None = None,
 ) -> BacktestResult:
-    """Async entry point — runs the sync backtest in a thread executor."""
+    """Async entry point — runs the sync backtest in a dedicated thread pool.
+
+    Uses a separate ThreadPoolExecutor (not the default) so that concurrent
+    backtests don't starve live session tasks (DB queries, data fetches, etc.).
+    A semaphore caps concurrent backtests to MAX_CONCURRENT_BACKTESTS.
+    """
     import asyncio
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        None,
-        lambda: run_backtest(
-            strategy_code=strategy_code,
-            symbols=symbols,
-            start_date=start_date,
-            end_date=end_date,
-            starting_cash=starting_cash,
-            interval=interval,
-            data_config=data_config,
-        ),
-    )
+
+    sem = _get_backtest_semaphore()
+    if not sem.locked():
+        pass  # fast path — slot available
+    else:
+        logger.info("Backtest queued — %d already running", MAX_CONCURRENT_BACKTESTS)
+
+    async with sem:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            _get_backtest_pool(),
+            lambda: run_backtest(
+                strategy_code=strategy_code,
+                symbols=symbols,
+                start_date=start_date,
+                end_date=end_date,
+                starting_cash=starting_cash,
+                interval=interval,
+                data_config=data_config,
+            ),
+        )
