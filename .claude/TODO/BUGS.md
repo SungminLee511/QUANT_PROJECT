@@ -4,24 +4,6 @@
 
 ---
 
-## BUG-5: Backtest `close` field has no mapping — LOW
-
-**File:** `backtest/engine.py` (line 442)
-
-```python
-col_to_field = {
-    "price": "Close", "open": "Open", "high": "High",
-    "low": "Low", "volume": "Volume",
-    # Missing: "close": "Close"
-}
-```
-
-`"close"` is a valid field in `data/sources/__init__.py` (line 66), but backtest engine has no mapping for it. Strategy using `data["close"]` gets NaN buffer.
-
-**Fix:** Add `"close": "Close"` to the mapping dict.
-
----
-
 ## BUG-6: Reconciler completely broken in multi-session mode — MEDIUM
 
 **File:** `portfolio/reconciler.py` (lines 13–51)

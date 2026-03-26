@@ -440,7 +440,7 @@ def run_backtest(
 
     # Map of OHLCV column names → field names
     col_to_field = {
-        "price": "Close", "open": "Open", "high": "High",
+        "price": "Close", "close": "Close", "open": "Open", "high": "High",
         "low": "Low", "volume": "Volume",
     }
 

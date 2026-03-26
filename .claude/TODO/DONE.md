@@ -29,3 +29,10 @@
 
 **Fix:** Split log path — checks `order.status == FILLED` before logging fill details. Live PLACED orders now log "PLACED" with correct info.
 **Date:** 2026-03-26
+
+---
+
+## BUG-5: Backtest `close` field has no mapping — LOW (was)
+
+**Fix:** Added `"close": "Close"` to `col_to_field` in `backtest/engine.py`.
+**Date:** 2026-03-26
