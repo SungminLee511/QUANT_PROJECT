@@ -274,3 +274,10 @@
 
 **Fix:** Wrapped all 5 sync `TradingClient` calls in `await asyncio.to_thread()`: `submit_order`, `cancel_order_by_id`, `get_order_by_id`, `get_account`, `get_all_positions`. Event loop no longer blocks during Alpaca HTTP requests.
 **Date:** 2026-03-26
+
+---
+
+## BUG-27: `PnLCalculator.record_close` never called — realized P&L always 0 — MEDIUM (was)
+
+**Fix:** Instantiated `PnLCalculator` in `PortfolioTracker.__init__`. `_on_order_update` now calls `_pnl.record_close()` on SELL fills with entry/exit prices and delta quantity. Published portfolio state now includes `realized_pnl`, `total_closed_trades`, and `win_rate` from P&L summary.
+**Date:** 2026-03-26

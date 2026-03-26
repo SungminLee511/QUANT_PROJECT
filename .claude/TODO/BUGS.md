@@ -104,15 +104,7 @@ When a symbol has no data for a given date and no prior buffer value, `0.0` is u
 
 ---
 
-## BUG-27: `PnLCalculator.record_close` never called — realized P&L always 0 — MEDIUM
-
-**File:** `portfolio/tracker.py` (entire file), `portfolio/pnl.py`
-
-`PortfolioTracker._on_order_update` handles SELL fills by updating positions and cash, but never calls `PnLCalculator.record_close()`. The PnLCalculator exists but is completely disconnected from actual trades.
-
-**Impact:** All realized P&L metrics (total, win rate, summary) are always zero. Dashboard P&L reporting is meaningless.
-
-**Fix:** Call `self._pnl.record_close(symbol, qty, entry_price, fill_price, "sell")` when processing SELL fills.
+## ~~BUG-27: `PnLCalculator.record_close` never called — realized P&L always 0 — FIXED~~
 
 ---
 

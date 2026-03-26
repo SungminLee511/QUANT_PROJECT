@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from db.models import Position as PositionModel, EquitySnapshot
 from db.session import get_session
+from portfolio.pnl import PnLCalculator
 from shared.enums import OrderStatus, Side
 from shared.redis_client import RedisClient, session_channel
 from shared.schemas import OrderUpdate
@@ -39,6 +40,8 @@ class PortfolioTracker:
         self._prices: dict[str, float] = {}  # Latest prices per symbol
         # Track cumulative filled qty per order to compute deltas (BUG-16)
         self._last_filled: dict[str, float] = {}  # order_id -> last seen filled_qty
+        # P&L tracking (BUG-27)
+        self._pnl = PnLCalculator()
 
         # State key — namespaced if session_id is set
         if session_id:
@@ -114,6 +117,21 @@ class PortfolioTracker:
                 pos["quantity"] = new_qty
                 self._cash -= delta_qty * update.avg_price
             elif update.side == Side.SELL:
+                # Record realized P&L before modifying position (BUG-27)
+                entry_price = pos["avg_entry_price"]
+                if entry_price > 0 and delta_qty > 0:
+                    pnl = self._pnl.record_close(
+                        symbol=symbol,
+                        quantity=delta_qty,
+                        entry_price=entry_price,
+                        exit_price=update.avg_price,
+                        side="sell",
+                    )
+                    logger.info(
+                        "Realized P&L: %s qty=%.4f entry=%.2f exit=%.2f pnl=%.2f (session=%s)",
+                        symbol, delta_qty, entry_price, update.avg_price, pnl, self._session_id,
+                    )
+
                 pos["quantity"] -= delta_qty
                 self._cash += delta_qty * update.avg_price
                 if pos["quantity"] <= 0.0001:  # Effectively closed
@@ -179,12 +197,17 @@ class PortfolioTracker:
                 equity = self.get_total_equity()
                 self._peak_equity = max(self._peak_equity, equity)
 
+                pnl_summary = self._pnl.get_summary(equity, self._day_start_equity)
+
                 state = {
                     "total_equity": equity,
                     "peak_equity": self._peak_equity,
                     "day_start_equity": self._day_start_equity,
                     "daily_pnl": equity - self._day_start_equity,
                     "cash": self._cash,
+                    "realized_pnl": pnl_summary["realized_pnl"],
+                    "total_closed_trades": pnl_summary["total_trades"],
+                    "win_rate": pnl_summary["win_rate"],
                     "open_positions": sum(
                         1 for p in self._positions.values() if p["quantity"] > 0
                     ),
