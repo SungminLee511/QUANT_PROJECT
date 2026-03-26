@@ -50,14 +50,6 @@ Symbol-by-symbol serial HTTP requests for order book data.
 
 ## Error Handling
 
-### ERR-3: `get_session_info` DB errors not caught — MEDIUM
-
-**File:** `session/manager.py`
-
-No try/except around database call. Error propagates up and can crash session start.
-
-**Fix:** Wrap in try/except, return None on failure, log error.
-
 ### ERR-4: No validation of yfinance `fast_info` return — LOW
 
 **File:** `data/sources/yfinance_source.py`

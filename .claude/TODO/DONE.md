@@ -92,3 +92,10 @@
 
 **Fix:** Replaced `except Exception: pass` with `logger.debug(..., exc_info=True)` in `execution/router.py`, `risk/manager.py`, `portfolio/tracker.py`, and `session/manager.py` (collector stop + task cancellation).
 **Date:** 2026-03-26
+
+---
+
+## ERR-3: `get_session_info` DB errors not caught — MEDIUM (was)
+
+**Fix:** Wrapped DB query in `get_session_info()` with try/except, returns None on failure, logs exception. Prevents unhandled DB errors from crashing session start.
+**Date:** 2026-03-26

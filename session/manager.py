@@ -154,14 +154,18 @@ class SessionManager:
         """Get info about a single session."""
         from sqlalchemy import select
 
-        async with get_session() as db:
-            result = await db.execute(
-                select(TradingSession).where(TradingSession.id == session_id)
-            )
-            ts = result.scalar_one_or_none()
-            if ts is None:
-                return None
-            return self._session_to_dict(ts)
+        try:
+            async with get_session() as db:
+                result = await db.execute(
+                    select(TradingSession).where(TradingSession.id == session_id)
+                )
+                ts = result.scalar_one_or_none()
+                if ts is None:
+                    return None
+                return self._session_to_dict(ts)
+        except Exception:
+            logger.exception("Failed to fetch session info for %s", session_id)
+            return None
 
     async def update_session(self, session_id: str, **kwargs) -> bool:
         """Update session fields (name, symbols, budget, api keys, etc.)."""
