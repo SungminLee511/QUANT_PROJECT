@@ -134,3 +134,10 @@
 
 **Fix:** Added `cleanup_expired_sessions()` and amortized `_maybe_cleanup()` (every 5 min) called from `get_current_user()` in `monitoring/auth.py`. Expired tokens now pruned automatically.
 **Date:** 2026-03-26
+
+---
+
+## PERF-5: Log buffers grow per-session forever — LOW (was)
+
+**Fix:** Added `cleanup_session_logs()` in `monitoring/logs.py` and called it from `session/manager.py` `delete_session()`. Removes log buffer and subscription tracking when a session is deleted.
+**Date:** 2026-03-26

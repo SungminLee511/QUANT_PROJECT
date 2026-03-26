@@ -36,6 +36,13 @@ def _get_buffer(session_id: str) -> deque:
     return _buffers[session_id]
 
 
+def cleanup_session_logs(session_id: str) -> None:
+    """Remove log buffer and subscription tracking for a deleted session."""
+    _buffers.pop(session_id, None)
+    _subscribed_sessions.discard(session_id)
+    logger.debug("Cleaned up log buffers for session %s", session_id)
+
+
 async def _on_log_entry(data: dict) -> None:
     """Called by Redis subscriber for every log entry. Fan out to buffers + SSE queues."""
     session_id = data.get("session_id", "")

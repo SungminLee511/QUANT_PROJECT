@@ -136,6 +136,10 @@ class SessionManager:
                 sa_delete(TradingSession).where(TradingSession.id == session_id)
             )
 
+        # Clean up in-memory log buffers
+        from monitoring.logs import cleanup_session_logs
+        cleanup_session_logs(session_id)
+
         logger.info("Deleted session %s", session_id)
         return True
 
