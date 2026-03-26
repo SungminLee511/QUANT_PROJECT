@@ -1,6 +1,7 @@
 """Async DB session factory using SQLAlchemy 2.0 + asyncpg."""
 
 from contextlib import asynccontextmanager
+from urllib.parse import quote_plus
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -17,7 +18,7 @@ def _build_url(config: dict) -> str:
     host = db.get("host", "localhost")
     port = db.get("port", 5432)
     name = db.get("name", "quant_trader")
-    return f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{name}"
+    return f"postgresql+asyncpg://{quote_plus(user)}:{quote_plus(password)}@{host}:{port}/{name}"
 
 
 def init_engine(config: dict):

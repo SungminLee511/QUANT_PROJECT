@@ -15,3 +15,10 @@
 
 **Fix:** Changed comparison from tautological `estimated_value > total_equity` to `signal.strength * total_equity > total_equity * max_pct`. Added `test_rejects_oversized` test.
 **Date:** 2026-03-26
+
+---
+
+## ARCH-1: DB password not URL-encoded — HIGH (was)
+
+**Fix:** Added `urllib.parse.quote_plus()` for user and password in `db/session.py` `_build_url()`.
+**Date:** 2026-03-26
