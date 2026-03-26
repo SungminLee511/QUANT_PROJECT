@@ -52,11 +52,3 @@ Missing `secure=True` on `set_cookie()`. Cookie can be sent over HTTP.
 ---
 
 ---
-
----
-
-## SEC-7: Credential timing attack — LOW
-
-**File:** `monitoring/auth.py` (~line 68)
-
-Uses `==` for password comparison. Use `hmac.compare_digest()` instead.

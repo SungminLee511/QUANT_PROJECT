@@ -155,3 +155,10 @@
 
 **Fix:** Added whitelist of allowed update fields in `monitoring/sessions.py` PUT endpoint. Only `name`, `symbols`, `api_key`, `api_secret`, `testnet`, `starting_budget`, `strategy_code`, `data_config`, `custom_data_code` are accepted.
 **Date:** 2026-03-26
+
+---
+
+## SEC-7: Credential timing attack — LOW (was)
+
+**Fix:** Replaced `==` with `hmac.compare_digest()` for both username and password comparison in `check_credentials()` in `monitoring/auth.py`.
+**Date:** 2026-03-26

@@ -1,5 +1,6 @@
 """Simple session-based authentication — cookie auth, in-memory sessions."""
 
+import hmac
 import secrets
 import time
 from functools import wraps
@@ -92,4 +93,7 @@ def check_credentials(username: str, password: str, config: dict) -> bool:
     auth_cfg = config.get("auth", {})
     expected_user = auth_cfg.get("username", "admin")
     expected_pass = auth_cfg.get("password", "admin1234")
-    return username == expected_user and password == expected_pass
+    return (
+        hmac.compare_digest(username, expected_user)
+        and hmac.compare_digest(password, expected_pass)
+    )
