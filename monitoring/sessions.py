@@ -106,7 +106,7 @@ def create_sessions_router(session_manager: SessionManager) -> APIRouter:
         if not get_current_user(request):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
 
-        pipeline = session_manager._pipelines.get(session_id)
+        pipeline = session_manager.get_pipeline(session_id)
         if pipeline is None:
             return JSONResponse({"error": "session not running"}, status_code=404)
 
@@ -147,7 +147,7 @@ def create_sessions_router(session_manager: SessionManager) -> APIRouter:
 
             # Computed equity from portfolio tracker (Redis state)
             portfolio_key = session_channel(session_id, "portfolio:state")
-            state = await session_manager._redis.get_flag(portfolio_key)
+            state = await session_manager.redis.get_flag(portfolio_key)
             if state:
                 computed_equity = state.get("total_equity")
 

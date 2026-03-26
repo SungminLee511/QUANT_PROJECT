@@ -88,12 +88,7 @@
 
 ---
 
-## BUG-35: Equity endpoint crashes — `_Proxy` blocks private attribute access
-
-- **Severity:** CRITICAL
-- **File:** `monitoring/sessions.py` lines 109, 150 / root cause: `monitoring/app.py` `_Proxy.__getattr__`
-- **Description:** The `GET /{session_id}/equity` endpoint accesses `session_manager._pipelines` and `session_manager._redis`. But `session_manager` is a `_Proxy` object that raises `AttributeError` for any attribute starting with `_`. Every call to this endpoint returns HTTP 500.
-- **Fix:** Add public accessor properties to `SessionManager` (e.g., `get_pipeline(sid)`, `get_redis()`) and use those instead of direct private attribute access.
+## ~~BUG-35: Equity endpoint crashes — `_Proxy` blocks private attribute access — FIXED~~
 
 ---
 

@@ -85,6 +85,17 @@ class SessionManager:
         self._redis = redis
         self._pipelines: dict[str, SessionPipeline] = {}
 
+    # ── Public Accessors ─────────────────────────────────────────────
+
+    def get_pipeline(self, session_id: str) -> SessionPipeline | None:
+        """Return the pipeline for a running session, or None."""
+        return self._pipelines.get(session_id)
+
+    @property
+    def redis(self) -> RedisClient:
+        """Return the shared Redis client."""
+        return self._redis
+
     # ── CRUD ──────────────────────────────────────────────────────────
 
     async def create_session(
