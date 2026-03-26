@@ -112,12 +112,7 @@
 
 ---
 
-## BUG-41: validator_v2 crashes on malformed custom_data entries
-
-- **Severity:** MEDIUM
-- **File:** `strategy/validator_v2.py` lines 144-147
-- **Description:** `custom["name"]` raises unhandled `KeyError` if a user sends `custom_data` entries without a `"name"` key via the validation API. Returns HTTP 500 instead of a validation error.
-- **Fix:** Use `custom.get("name", "")` with a guard or wrap in try/except.
+## ~~BUG-41: validator_v2 crashes on malformed custom_data entries — FIXED~~
 
 ---
 

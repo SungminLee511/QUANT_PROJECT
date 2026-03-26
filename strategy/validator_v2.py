@@ -142,9 +142,13 @@ def _check_data_access(main_func: ast.AST, data_config: dict, result: Validation
 
     # Custom data
     for custom in data_config.get("custom_data", []):
-        configured_fields.add(custom["name"])
+        name = custom.get("name") if isinstance(custom, dict) else None
+        if name:
+            configured_fields.add(name)
     for custom in data_config.get("custom_global_data", []):
-        configured_fields.add(custom["name"])
+        name = custom.get("name") if isinstance(custom, dict) else None
+        if name:
+            configured_fields.add(name)
 
     # Always available
     configured_fields.add("tickers")
