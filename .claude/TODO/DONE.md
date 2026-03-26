@@ -57,3 +57,10 @@
 
 **Fix:** Added `asyncio.Lock` guarding `_cash`, `_positions`, `_last_prices` in both `_on_price_update` and `place_order` in `execution/sim_adapter.py`.
 **Date:** 2026-03-26
+
+---
+
+## CQ-1: Duplicate `ValidationResult` class — MEDIUM (was)
+
+**Fix:** Extracted `ValidationResult` dataclass to `shared/schemas.py`. Both `strategy/validator_v2.py` and `strategy/custom_validator.py` now import from there.
+**Date:** 2026-03-26

@@ -5,7 +5,8 @@ Code is NEVER executed during validation. Only parsed and inspected.
 
 import ast
 import logging
-from dataclasses import dataclass, field
+
+from shared.schemas import ValidationResult
 
 logger = logging.getLogger(__name__)
 
@@ -24,20 +25,6 @@ FORBIDDEN_NAMES = {
     "getattr", "setattr", "delattr", "breakpoint",
     "requests", "urllib", "socket", "http",
 }
-
-
-@dataclass
-class ValidationResult:
-    valid: bool = True
-    errors: list[str] = field(default_factory=list)
-    warnings: list[str] = field(default_factory=list)
-
-    def add_error(self, msg: str):
-        self.valid = False
-        self.errors.append(msg)
-
-    def add_warning(self, msg: str):
-        self.warnings.append(msg)
 
 
 def validate_strategy_code(source: str, data_config: dict | None = None) -> ValidationResult:

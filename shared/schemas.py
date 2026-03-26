@@ -1,15 +1,36 @@
-"""Pydantic v2 models for all inter-service messages.
+"""Pydantic v2 models for all inter-service messages, plus shared dataclasses.
 
 Every message that goes through Redis is serializable via .model_dump_json()
 and deserializable via .model_validate_json().
 """
 
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
 from pydantic import BaseModel, Field
 
 from shared.enums import Exchange, OrderStatus, OrderType, SessionType, Side, Signal
+
+
+# ---------------------------------------------------------------------------
+# Shared dataclasses (used across strategy validators)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ValidationResult:
+    """Result of AST-based code validation (strategies, custom data funcs)."""
+
+    valid: bool = True
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+    def add_error(self, msg: str):
+        self.valid = False
+        self.errors.append(msg)
+
+    def add_warning(self, msg: str):
+        self.warnings.append(msg)
 
 
 def _utcnow() -> datetime:

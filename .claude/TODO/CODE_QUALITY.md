@@ -6,14 +6,6 @@
 
 ## Code Quality
 
-### CQ-1: Duplicate `ValidationResult` class — MEDIUM
-
-**Files:** `strategy/validator_v2.py`, `strategy/custom_validator.py`
-
-Same dataclass defined independently in both files.
-
-**Fix:** Extract to `shared/schemas.py` or a shared strategy utils module.
-
 ### CQ-3: Dead code — `data/custom_data.py` — LOW
 
 The file exists but the V2 architecture loads custom data dynamically via `collector.load_custom_data_functions()`. Verify whether this file is actually imported anywhere or if it's V1 leftover. If unused, delete.
