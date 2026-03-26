@@ -78,7 +78,11 @@ class RedisClient:
             self._listener_task = asyncio.create_task(self._listen())
 
     async def _listen(self) -> None:
-        """Background listener for pub/sub messages."""
+        """Background listener for pub/sub messages.
+
+        Dispatches callbacks as concurrent tasks so a slow subscriber
+        on one session doesn't block others (ARCH-4).
+        """
         try:
             async for message in self._pubsub.listen():
                 if message["type"] != "message":
@@ -88,20 +92,28 @@ class RedisClient:
 
                 handlers = self._subscriptions.get(channel, [])
                 for callback, model_class in handlers:
-                    try:
-                        if model_class is not None:
-                            parsed = model_class.model_validate_json(data)
-                        else:
-                            parsed = json.loads(data)
-                        await callback(parsed)
-                    except Exception:
-                        logger.exception(
-                            "Error in handler for channel %s", channel
-                        )
+                    # Fire-and-forget: parse + dispatch as a task
+                    asyncio.create_task(
+                        self._dispatch(channel, callback, model_class, data)
+                    )
         except asyncio.CancelledError:
             pass
         except Exception:
             logger.exception("Redis listener error")
+
+    @staticmethod
+    async def _dispatch(
+        channel: str, callback: Callable, model_class: Optional[Type[BaseModel]], data: str
+    ) -> None:
+        """Parse a message and invoke the callback. Runs as an independent task."""
+        try:
+            if model_class is not None:
+                parsed = model_class.model_validate_json(data)
+            else:
+                parsed = json.loads(data)
+            await callback(parsed)
+        except Exception:
+            logger.exception("Error in handler for channel %s", channel)
 
     # ── Flag helpers (for kill switch, state flags) ──
 

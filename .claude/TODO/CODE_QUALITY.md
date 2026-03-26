@@ -10,14 +10,6 @@
 
 ## Architecture
 
-### ARCH-4: Single Redis connection shared across sessions — MEDIUM
-
-**File:** `session/manager.py`
-
-Slow subscriber in one session delays all others (sequential `_listen()` loop).
-
-**Fix:** Per-session Redis connections, or async message dispatch.
-
 ### ARCH-5: No rate limiting on API endpoints — MEDIUM
 
 Backtest endpoint spawns blocking yfinance downloads. Concurrent abuse could exhaust thread pool.

@@ -197,3 +197,10 @@
 
 **Fix:** Added per-session CSRF tokens stored in auth sessions. CSRF middleware in `monitoring/app.py` validates `X-CSRF-Token` header on all POST/PUT/DELETE requests (except login). Token auto-injected into `base.html` meta tag and all `fetch()` calls via JS monkey-patch.
 **Date:** 2026-03-26
+
+---
+
+## ARCH-4: Single Redis connection shared across sessions — MEDIUM (was)
+
+**Fix:** Changed `_listen()` in `shared/redis_client.py` to dispatch callbacks as `asyncio.create_task()` instead of awaiting sequentially. Slow subscribers no longer block other sessions' message processing.
+**Date:** 2026-03-26
