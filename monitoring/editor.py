@@ -33,7 +33,7 @@ _DEFAULT_STRATEGY_FALLBACK = "import numpy as np\n\ndef main(data):\n    return 
 def _read_default_strategy() -> str:
     """Read default strategy file with fallback if missing."""
     try:
-        return _read_default_strategy()
+        return DEFAULT_STRATEGY.read_text()
     except (FileNotFoundError, OSError):
         logger.warning("Default strategy file not found: %s", DEFAULT_STRATEGY)
         return _DEFAULT_STRATEGY_FALLBACK

@@ -229,8 +229,10 @@ class YFinanceSource:
 
         n = len(symbols)
         ohlcv_fields = fields_to_fetch & {"open", "high", "low", "close", "price", "volume"}
+        # BUG-33 fix: day_change_pct computed from historical close, not as a fundamental
+        needs_day_change = "day_change_pct" in fields_to_fetch
         fundamental_fields = fields_to_fetch & {"market_cap", "pe_ratio", "week52_high",
-                                                  "week52_low", "day_change_pct"}
+                                                  "week52_low"}
 
         result: dict[str, np.ndarray] = {}
 
@@ -284,6 +286,48 @@ class YFinanceSource:
             except Exception:
                 logger.warning("yfinance history fetch error", exc_info=True)
 
+        # BUG-33 fix: compute day_change_pct per-bar from historical close prices
+        if needs_day_change:
+            # Ensure we have close data to derive from
+            close_arr = result.get("close") or result.get("price")
+            if close_arr is not None:
+                dcp_arr = np.full((n, lookback), np.nan, dtype=np.float64)
+                for i in range(n):
+                    for j in range(1, lookback):
+                        prev_val = close_arr[i, j - 1]
+                        curr_val = close_arr[i, j]
+                        if not np.isnan(prev_val) and not np.isnan(curr_val) and prev_val != 0:
+                            dcp_arr[i, j] = (curr_val - prev_val) / prev_val * 100
+                result["day_change_pct"] = dcp_arr
+            else:
+                # No close data available — fetch close history specifically for day_change_pct
+                try:
+                    df = yf.download(
+                        symbols if len(symbols) > 1 else symbols[0],
+                        period=period_map.get(interval, "3mo"),
+                        interval=interval,
+                        progress=False,
+                        threads=True,
+                    )
+                    if not df.empty:
+                        multi_symbol = len(symbols) > 1
+                        dcp_arr = np.full((n, lookback), np.nan, dtype=np.float64)
+                        for i, sym in enumerate(symbols):
+                            try:
+                                if multi_symbol:
+                                    series = df[("Close", sym)].dropna().values.astype(np.float64)
+                                else:
+                                    series = df["Close"].dropna().values.astype(np.float64)
+                                # Compute pct changes
+                                pct = np.diff(series) / series[:-1] * 100
+                                take = min(len(pct), lookback)
+                                dcp_arr[i, -take:] = pct[-take:]
+                            except (KeyError, Exception):
+                                pass
+                        result["day_change_pct"] = dcp_arr
+                except Exception:
+                    logger.warning("yfinance day_change_pct fetch error", exc_info=True)
+
         # For fundamentals: no per-bar history, repeat current value
         if fundamental_fields:
             import yfinance as yf
@@ -292,25 +336,14 @@ class YFinanceSource:
                 for i, sym in enumerate(symbols):
                     try:
                         ticker = yf.Ticker(sym)
-                        if field_name == "day_change_pct":
-                            try:
-                                fi = ticker.fast_info
-                            except Exception:
-                                fi = None
-                            if fi is None:
-                                fi = {}
-                            price = float(fi.get("lastPrice", 0) or fi.get("last_price", 0) or 0)
-                            prev = float(fi.get("previousClose", 0) or fi.get("previous_close", 0) or 0)
-                            val = ((price - prev) / prev * 100) if prev else 0.0
-                        else:
-                            info = ticker.info
-                            info_map = {
-                                "market_cap": "marketCap",
-                                "pe_ratio": "trailingPE",
-                                "week52_high": "fiftyTwoWeekHigh",
-                                "week52_low": "fiftyTwoWeekLow",
-                            }
-                            val = float(info.get(info_map[field_name], 0) or 0)
+                        info = ticker.info
+                        info_map = {
+                            "market_cap": "marketCap",
+                            "pe_ratio": "trailingPE",
+                            "week52_high": "fiftyTwoWeekHigh",
+                            "week52_low": "fiftyTwoWeekLow",
+                        }
+                        val = float(info.get(info_map[field_name], 0) or 0)
                         arr[i, :] = val
                     except Exception:
                         logger.warning("yfinance history fundamental error for %s/%s", sym, field_name)

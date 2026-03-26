@@ -37,3 +37,9 @@
 ### Phase 6: Config & Minor
 17. **BUG-28** — Default strategy file `read_text()` unguarded
 18. **BUG-31** — Non-numeric port env var silently passes through
+
+## ~~Round 2 — ALL COMPLETE (BUG-14 through BUG-31)~~
+
+---
+
+## ~~Round 3 — ALL COMPLETE (BUG-32 through BUG-33)~~

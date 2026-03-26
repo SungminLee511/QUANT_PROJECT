@@ -73,3 +73,11 @@
 ---
 
 ## ~~BUG-31: Non-numeric port env var silently passes through as string — FIXED~~
+
+---
+
+## ~~BUG-32: Infinite recursion in `_read_default_strategy()` — FIXED~~
+
+---
+
+## ~~BUG-33: `day_change_pct` backfilled as repeated constant in `yfinance_source.fetch_history` — FIXED~~

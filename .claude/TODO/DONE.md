@@ -351,3 +351,17 @@
 
 **Fix:** In `shared/config.py`, changed bare `except: pass` to log a warning and `continue` (skip the invalid value). In `db/session.py`, added `int()` cast with fallback to default port 5432 for non-numeric values.
 **Date:** 2026-03-26
+
+---
+
+## BUG-32: Infinite recursion in `_read_default_strategy()` — CRITICAL (was, regression)
+
+**Fix:** Restored `DEFAULT_STRATEGY.read_text()` inside `_read_default_strategy()` helper. The BUG-28 `replace_all` had accidentally replaced this call too, creating infinite recursion.
+**Date:** 2026-03-26
+
+---
+
+## BUG-33: `day_change_pct` backfilled as repeated constant in yfinance `fetch_history` — MEDIUM (was)
+
+**Fix:** Moved `day_change_pct` out of `fundamental_fields`. Now computed per-bar from historical close prices via `(close[t] - close[t-1]) / close[t-1] * 100`. Falls back to fetching close history if close data isn't already in the result. Removed dead `day_change_pct` branch from fundamentals loop.
+**Date:** 2026-03-26
