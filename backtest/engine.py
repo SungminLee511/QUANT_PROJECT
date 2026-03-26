@@ -510,16 +510,16 @@ def run_backtest(
             idx = sym_to_idx[sym]
             prev_close[idx] = price
 
-        # Fill NaN with previous values or 0 for missing symbols
+        # Fill NaN with previous values; keep NaN if no prior data (BUG-25 fix)
         for fname in fields:
             vals = bar_values[fname]
             for i in range(n_symbols):
                 if np.isnan(vals[i]):
                     # Use last known value from buffer
                     if fill_counts[fname] > 0:
-                        vals[i] = buffers[fname][i, -1]
-                    else:
-                        vals[i] = 0.0
+                        prev_val = buffers[fname][i, -1]
+                        if not np.isnan(prev_val):
+                            vals[i] = prev_val
 
         # Append to rolling buffers
         for fname in fields:

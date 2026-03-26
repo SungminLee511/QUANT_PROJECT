@@ -316,3 +316,10 @@
 
 **Fix:** Added `prev_close` array to track previous bar's close per symbol. Computes `day_change_pct = (close - prev_close) / prev_close * 100` as a special case alongside `vwap`. Updates `prev_close` after each bar.
 **Date:** 2026-03-26
+
+---
+
+## BUG-25: Backtest fills missing data with 0.0 instead of NaN — MEDIUM (was)
+
+**Fix:** Changed fallback from `0.0` to keeping `np.nan` when no prior buffer value exists. Also added NaN check on buffer lookback to avoid propagating stale NaN. Strategies now see NaN instead of fake 0.0 prices for truly missing data.
+**Date:** 2026-03-26

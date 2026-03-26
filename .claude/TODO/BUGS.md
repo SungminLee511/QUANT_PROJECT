@@ -48,15 +48,7 @@
 
 ---
 
-## BUG-25: Backtest fills missing data with 0.0 instead of NaN — MEDIUM
-
-**File:** `backtest/engine.py:506-507`
-
-When a symbol has no data for a given date and no prior buffer value, `0.0` is used. A price of 0.0 silently corrupts strategy calculations.
-
-**Impact:** Strategies see 0.0 prices for missing symbols, producing nonsensical weights.
-
-**Fix:** Use `np.nan` and ensure `_build_data_snapshot` handles NaN (e.g., skip symbols or require all non-NaN).
+## ~~BUG-25: Backtest fills missing data with 0.0 instead of NaN — FIXED~~
 
 ---
 
