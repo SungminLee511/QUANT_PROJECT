@@ -239,3 +239,10 @@
 
 **Fix:** Added `datetime, decimal, typing, logging, pandas` to executor's `_IMPORT_WHITELIST` in `strategy/executor.py`. Now matches validator's `ALLOWED_IMPORTS`. All are safe (no I/O, no network).
 **Date:** 2026-03-26
+
+---
+
+## BUG-16: Partial fill double-counting in PortfolioTracker — HIGH (was)
+
+**Fix:** Added `_last_filled` dict tracking cumulative `filled_qty` per `order_id`. `_on_order_update` now computes `delta_qty = filled_qty - prev_filled` and only applies the incremental fill. Cleaned up on FILLED status. Prevents position quantity drift on partial fills from Binance/Alpaca.
+**Date:** 2026-03-26

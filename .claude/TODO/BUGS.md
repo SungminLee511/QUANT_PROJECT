@@ -12,15 +12,7 @@
 
 ---
 
-## BUG-16: Partial fill double-counting in PortfolioTracker — HIGH
-
-**File:** `portfolio/tracker.py:89-96`
-
-`_on_order_update` adds `update.filled_qty` to position quantity on each update. Binance and Alpaca send **cumulative** filled quantities (e.g., first update: filled_qty=5, second: filled_qty=8 meaning 3 more). The tracker adds 5, then 8 → position shows 13 instead of correct 8.
-
-**Impact:** Position quantities drift upward on every partial fill. Cash accounting also wrong.
-
-**Fix:** Track last-seen `filled_qty` per `order_id` in a dict. Only apply the delta: `update.filled_qty - last_known`.
+## ~~BUG-16: Partial fill double-counting in PortfolioTracker — FIXED~~
 
 ---
 

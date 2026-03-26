@@ -37,6 +37,8 @@ class PortfolioTracker:
         self._peak_equity: float = starting_cash
         self._day_start_equity: float = starting_cash
         self._prices: dict[str, float] = {}  # Latest prices per symbol
+        # Track cumulative filled qty per order to compute deltas (BUG-16)
+        self._last_filled: dict[str, float] = {}  # order_id -> last seen filled_qty
 
         # State key — namespaced if session_id is set
         if session_id:
@@ -70,7 +72,12 @@ class PortfolioTracker:
         logger.info("Portfolio tracker stopped (session=%s)", self._session_id)
 
     async def _on_order_update(self, data: dict) -> None:
-        """Update positions based on order fill updates."""
+        """Update positions based on order fill updates.
+
+        filled_qty from exchanges is cumulative (e.g., partial fill #1: 5,
+        partial fill #2: 8 means 3 new). We track the last-seen filled_qty
+        per order_id and only apply the delta (BUG-16 fix).
+        """
         try:
             update = OrderUpdate.model_validate(data)
 
@@ -78,6 +85,18 @@ class PortfolioTracker:
                 return
             if update.filled_qty <= 0 or update.avg_price <= 0:
                 return
+
+            # Compute incremental fill qty (cumulative → delta)
+            prev_filled = self._last_filled.get(update.order_id, 0.0)
+            delta_qty = update.filled_qty - prev_filled
+            self._last_filled[update.order_id] = update.filled_qty
+
+            # Clean up tracking for completed orders
+            if update.status == OrderStatus.FILLED:
+                self._last_filled.pop(update.order_id, None)
+
+            if delta_qty <= 0:
+                return  # No new fill (duplicate or stale update)
 
             symbol = update.symbol
             pos = self._positions.get(symbol, {
@@ -89,14 +108,14 @@ class PortfolioTracker:
             if update.side == Side.BUY:
                 # Update average entry price
                 old_value = pos["quantity"] * pos["avg_entry_price"]
-                new_value = update.filled_qty * update.avg_price
-                new_qty = pos["quantity"] + update.filled_qty
+                new_value = delta_qty * update.avg_price
+                new_qty = pos["quantity"] + delta_qty
                 pos["avg_entry_price"] = (old_value + new_value) / new_qty if new_qty > 0 else 0
                 pos["quantity"] = new_qty
-                self._cash -= update.filled_qty * update.avg_price
+                self._cash -= delta_qty * update.avg_price
             elif update.side == Side.SELL:
-                pos["quantity"] -= update.filled_qty
-                self._cash += update.filled_qty * update.avg_price
+                pos["quantity"] -= delta_qty
+                self._cash += delta_qty * update.avg_price
                 if pos["quantity"] <= 0.0001:  # Effectively closed
                     pos["quantity"] = 0.0
                     pos["avg_entry_price"] = 0.0
@@ -107,8 +126,8 @@ class PortfolioTracker:
             await self._persist_position(symbol, pos)
 
             logger.info(
-                "Position updated: %s qty=%.4f avg_price=%.2f (session=%s)",
-                symbol, pos["quantity"], pos["avg_entry_price"], self._session_id,
+                "Position updated: %s qty=%.4f avg_price=%.2f delta=%.4f (session=%s)",
+                symbol, pos["quantity"], pos["avg_entry_price"], delta_qty, self._session_id,
             )
 
         except Exception:
