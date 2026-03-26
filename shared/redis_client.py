@@ -114,16 +114,21 @@ class RedisClient:
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, max_backoff)
 
-                # Re-subscribe to all channels after reconnect
+                # BUG-22 fix: create a fresh PubSub object to avoid stale connection
                 try:
                     if self._pubsub:
-                        channels = list(self._subscriptions.keys())
-                        if channels:
-                            await self._pubsub.subscribe(*channels)
-                            logger.info(
-                                "Redis listener re-subscribed to %d channel(s)",
-                                len(channels),
-                            )
+                        try:
+                            await self._pubsub.close()
+                        except Exception:
+                            pass
+                    self._pubsub = self._redis.pubsub()
+                    channels = list(self._subscriptions.keys())
+                    if channels:
+                        await self._pubsub.subscribe(*channels)
+                        logger.info(
+                            "Redis listener re-subscribed to %d channel(s)",
+                            len(channels),
+                        )
                 except Exception:
                     logger.exception("Failed to re-subscribe — will retry")
 

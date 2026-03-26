@@ -295,3 +295,10 @@
 
 **Fix:** Added handling for `strategy_code`, `data_config`, and `custom_data_code` in `update_session`. Dict/list values are JSON-serialized before storage; string values passed through as-is.
 **Date:** 2026-03-26
+
+---
+
+## BUG-22: Stale PubSub object reused after Redis connection failure — HIGH (was)
+
+**Fix:** In `_listen()` retry loop, close the old PubSub object and create a fresh one via `self._redis.pubsub()` before re-subscribing. Prevents stale connection from causing infinite retry loops where no messages flow.
+**Date:** 2026-03-26

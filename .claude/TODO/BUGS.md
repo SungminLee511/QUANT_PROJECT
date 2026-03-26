@@ -36,15 +36,7 @@
 
 ---
 
-## BUG-22: Stale PubSub object reused after Redis connection failure — HIGH
-
-**File:** `shared/redis_client.py:117-128`
-
-The CONC-3 retry loop re-subscribes using the same `self._pubsub` object after a connection error. If the underlying connection is dead, the PubSub object is stale and `.subscribe()` may also fail, causing an infinite retry loop that never recovers.
-
-**Impact:** After a Redis connection blip, pub/sub may never recover. The system looks running but no messages flow (ticks, signals, orders all dead).
-
-**Fix:** Create a fresh PubSub object before re-subscribing: `self._pubsub = self._redis.pubsub()`.
+## ~~BUG-22: Stale PubSub object reused after Redis connection failure — FIXED~~
 
 ---
 
