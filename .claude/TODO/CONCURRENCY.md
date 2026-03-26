@@ -4,30 +4,20 @@
 
 ---
 
-## CONC-2: `_sse_queues` concurrent modification — MEDIUM
+## CONC-2: `_sse_queues` concurrent modification — LOW (ACCEPTED)
 
 **File:** `monitoring/logs.py`
 
 Safe in single-threaded asyncio, breaks with multiple uvicorn workers.
 
-**Fix:** Fine for current single-worker setup. Document as scaling constraint.
+**Status:** Accepted constraint for personal-use single-worker system.
 
 ---
 
-## CONC-3: Redis `_listen` task never restarts on error — MEDIUM
-
-**File:** `shared/redis_client.py` (~lines 80–104)
-
-If `_listen()` exits on exception, all subscriptions silently die. No reconnection logic.
-
-**Fix:** Wrap in retry loop with exponential backoff and re-subscribe.
-
----
-
-## CONC-4: `_open_orders` dict modified during iteration — LOW
+## CONC-4: `_open_orders` dict modified during iteration — LOW (ACCEPTED)
 
 **File:** `execution/router.py` (~line 181)
 
 Safe due to `list()` copy + single-threaded asyncio. Fragile if architecture changes.
 
-**Fix:** Document or use a proper concurrent data structure.
+**Status:** Accepted — already protected by `list()` copy.

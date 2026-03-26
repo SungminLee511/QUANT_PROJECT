@@ -10,10 +10,10 @@
 
 ## Architecture
 
-### ARCH-7: Module-level globals prevent multi-worker — LOW
+### ARCH-7: Module-level globals prevent multi-worker — LOW (ACCEPTED)
 
 **Files:** `monitoring/logs.py`, `monitoring/auth.py`
 
 In-memory dicts/sets break with multiple uvicorn workers. Fine for single-worker.
 
-**Fix:** Document as scaling constraint. Use Redis-backed stores if scaling needed.
+**Status:** Accepted constraint for personal-use single-worker system. Would need Redis-backed stores for multi-worker scaling.

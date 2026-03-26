@@ -82,24 +82,50 @@ class RedisClient:
 
         Dispatches callbacks as concurrent tasks so a slow subscriber
         on one session doesn't block others (ARCH-4).
-        """
-        try:
-            async for message in self._pubsub.listen():
-                if message["type"] != "message":
-                    continue
-                channel = message["channel"]
-                data = message["data"]
 
-                handlers = self._subscriptions.get(channel, [])
-                for callback, model_class in handlers:
-                    # Fire-and-forget: parse + dispatch as a task
-                    asyncio.create_task(
-                        self._dispatch(channel, callback, model_class, data)
-                    )
-        except asyncio.CancelledError:
-            pass
-        except Exception:
-            logger.exception("Redis listener error")
+        Auto-retries on error with exponential backoff (CONC-3).
+        Re-subscribes to all channels after reconnecting.
+        """
+        backoff = 1.0
+        max_backoff = 60.0
+
+        while True:
+            try:
+                async for message in self._pubsub.listen():
+                    backoff = 1.0  # reset on successful message
+                    if message["type"] != "message":
+                        continue
+                    channel = message["channel"]
+                    data = message["data"]
+
+                    handlers = self._subscriptions.get(channel, [])
+                    for callback, model_class in handlers:
+                        asyncio.create_task(
+                            self._dispatch(channel, callback, model_class, data)
+                        )
+                # listen() ended normally (e.g. unsubscribed) — exit loop
+                break
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.exception(
+                    "Redis listener error — retrying in %.1fs", backoff
+                )
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, max_backoff)
+
+                # Re-subscribe to all channels after reconnect
+                try:
+                    if self._pubsub:
+                        channels = list(self._subscriptions.keys())
+                        if channels:
+                            await self._pubsub.subscribe(*channels)
+                            logger.info(
+                                "Redis listener re-subscribed to %d channel(s)",
+                                len(channels),
+                            )
+                except Exception:
+                    logger.exception("Failed to re-subscribe — will retry")
 
     @staticmethod
     async def _dispatch(

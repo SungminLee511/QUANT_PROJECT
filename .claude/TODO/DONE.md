@@ -218,3 +218,10 @@
 
 **Fix:** Changed `run_backtest_async()` in `backtest/engine.py` to use a dedicated `ThreadPoolExecutor` (max 2 workers) instead of the default thread pool. Added `asyncio.Semaphore` to cap concurrent backtests. Queued backtests log a waiting message.
 **Date:** 2026-03-26
+
+---
+
+## CONC-3: Redis `_listen` task never restarts on error — MEDIUM (was)
+
+**Fix:** Added retry loop with exponential backoff (1s → 60s max) in `_listen()` in `shared/redis_client.py`. On reconnect, re-subscribes to all tracked channels. Only exits on `CancelledError` or normal pubsub close.
+**Date:** 2026-03-26

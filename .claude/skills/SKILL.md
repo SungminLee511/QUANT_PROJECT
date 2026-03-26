@@ -839,6 +839,8 @@ See **[BUG_FIX_GUIDE.md](BUG_FIX_GUIDE.md)** for Docker-era bugs and runtime fix
 - **Backtesting is lightweight** — pure in-memory (no DB, no Redis), uses same rolling buffer format as live.
 - **Backtest thread pool** — `run_backtest_async()` uses a dedicated `ThreadPoolExecutor` (max 2) + semaphore, not the default pool. Prevents starving live session tasks.
 - **Rate limiting** — in-memory fixed-window limiter (`monitoring/rate_limit.py`) protects expensive endpoints (backtest run, session CRUD, editor deploy). No external deps.
+- **Redis listener auto-reconnect** — `_listen()` retries with exponential backoff (1s → 60s) and re-subscribes on reconnect. Only exits on `CancelledError`.
+- **Single-worker constraint** — in-memory stores (auth sessions, SSE queues, log buffers) break with multiple uvicorn workers. Accepted for personal-use system.
 
 ---
 
@@ -850,9 +852,9 @@ See `.claude/TODO/` for detailed open issues. Summary:
 |------|----------|-------------------|
 | `BUGS.md` | Logic errors | All resolved — see DONE.md |
 | `SECURITY.md` | Security | All resolved — see DONE.md |
-| `CONCURRENCY.md` | Thread safety | CONC-2/3/4 remain (low priority, scaling constraints) |
+| `CONCURRENCY.md` | Thread safety | CONC-2/4 accepted (single-worker constraints) |
 | `PERFORMANCE.md` | Perf + errors | All resolved — see DONE.md |
-| `CODE_QUALITY.md` | Code + arch | ARCH-7 remains (multi-worker globals, low priority) |
+| `CODE_QUALITY.md` | Code + arch | ARCH-7 accepted (single-worker constraint) |
 
 ### Completed Features
 - ~~Universe Presets for Session Creation~~ — DONE
