@@ -28,7 +28,7 @@ from execution.router import OrderRouter
 from execution.sim_adapter import SimulationAdapter
 from portfolio.tracker import PortfolioTracker
 from risk.kill_switch import KillSwitch
-from risk.limits import check_portfolio_risk
+from risk.limits import check_portfolio_risk, check_short_loss
 from shared.market_calendar import MarketCalendar
 
 logger = logging.getLogger(__name__)
@@ -42,6 +42,8 @@ DEFAULT_DATA_CONFIG = {
     "resolution": "1min",
     "exec_every_n": 1,
     "schedule_mode": "always_on",
+    "strategy_mode": "rebalance",
+    "short_loss_limit_pct": 1.0,
     "fields": {
         "price": {"enabled": True, "lookback": 20, "source": "yfinance"},
     },
@@ -55,10 +57,11 @@ DEFAULT_STRATEGY_PATH = Path(__file__).resolve().parent.parent / "strategy" / "e
 class SessionPipeline:
     """All runtime state for a single session."""
 
-    def __init__(self, session_id: str, session_type: SessionType, schedule_mode: str = "always_on"):
+    def __init__(self, session_id: str, session_type: SessionType, schedule_mode: str = "always_on", strategy_mode: str = "rebalance"):
         self.session_id = session_id
         self.session_type = session_type
         self.schedule_mode = schedule_mode
+        self.strategy_mode = strategy_mode
         self.calendar: MarketCalendar | None = None
         self.tasks: list[asyncio.Task] = []
         self.collector: DataCollector | None = None
@@ -68,6 +71,9 @@ class SessionPipeline:
         self.portfolio_tracker: PortfolioTracker | None = None
         self.sim_adapter: SimulationAdapter | None = None
         self.running = False
+        self.data_config: dict = {}
+        # Short position entry prices — for kill switch tracking
+        self.short_entry_prices: dict[str, float] = {}
 
 
 class SessionManager:
@@ -235,8 +241,17 @@ class SessionManager:
         data_config = info.get("data_config") or DEFAULT_DATA_CONFIG
         custom_data_code = info.get("custom_data_code") or []
         schedule_mode = data_config.get("schedule_mode", "always_on")
+        strategy_mode = data_config.get("strategy_mode", "rebalance")
 
-        pipeline = SessionPipeline(session_id, session_type, schedule_mode=schedule_mode)
+        # Binance doesn't support short selling — force rebalance mode
+        if strategy_mode == "long_short" and session_type.exchange == Exchange.BINANCE:
+            logger.warning(
+                "Session %s: long_short not supported on Binance, falling back to rebalance",
+                session_id,
+            )
+            strategy_mode = "rebalance"
+
+        pipeline = SessionPipeline(session_id, session_type, schedule_mode=schedule_mode, strategy_mode=strategy_mode)
         # Create market calendar if schedule_mode is not always_on
         if schedule_mode != "always_on":
             pipeline.calendar = MarketCalendar(session_type.exchange)
@@ -331,14 +346,16 @@ class SessionManager:
         # Build per-session config (for OrderRouter/PortfolioTracker)
         session_config = self._build_session_config(sid, config_data, symbols)
 
+        pipeline.data_config = data_config
+
         # 1. Strategy Executor
-        executor = StrategyExecutor(sid, symbols)
+        executor = StrategyExecutor(sid, symbols, strategy_mode=pipeline.strategy_mode)
         if strategy_code:
             executor.load_strategy(strategy_code)
         pipeline.executor = executor
 
         # 2. Weight Rebalancer
-        rebalancer = WeightRebalancer(sid, symbols, exchange)
+        rebalancer = WeightRebalancer(sid, symbols, exchange, strategy_mode=pipeline.strategy_mode)
         pipeline.rebalancer = rebalancer
 
         # 3. Order Router — sim or real
@@ -348,6 +365,7 @@ class SessionManager:
                 starting_budget=starting_budget,
                 exchange=exchange,
                 redis=self._redis,
+                strategy_mode=pipeline.strategy_mode,
             )
             pipeline.sim_adapter = sim_adapter
             router = OrderRouter(session_config, self._redis, sim_adapter=sim_adapter, session_id=sid)
@@ -521,8 +539,10 @@ class SessionManager:
             balances = await pipeline.sim_adapter.get_balances()
             total_equity = balances.get("total_equity", starting_budget)
             for sym, pos in pipeline.sim_adapter._positions.items():
-                if pos.get("quantity", 0) > 0.0001:
-                    current_positions[sym] = pos["quantity"]
+                qty = pos.get("quantity", 0)
+                # Include both long (> 0) and short (< 0) positions
+                if abs(qty) > 0.0001:
+                    current_positions[sym] = qty
         else:
             portfolio_key = session_channel(sid, "portfolio:state")
             state = await self._redis.get_flag(portfolio_key)
@@ -531,7 +551,7 @@ class SessionManager:
                 for pos in state.get("positions", []):
                     current_positions[pos["symbol"]] = pos.get("quantity", 0)
 
-        # Zero weights → sell everything
+        # Zero weights → flatten everything (sell longs, cover shorts)
         weights = np.zeros(len(pipeline.executor.symbols))
         orders = pipeline.rebalancer.rebalance(
             target_weights=weights,
@@ -604,8 +624,10 @@ class SessionManager:
                 balances = await pipeline.sim_adapter.get_balances()
                 total_equity = balances.get("total_equity", starting_budget)
                 for sym, pos in pipeline.sim_adapter._positions.items():
-                    if pos.get("quantity", 0) > 0.0001:
-                        current_positions[sym] = pos["quantity"]
+                    qty = pos.get("quantity", 0)
+                    # Include both long and short positions
+                    if abs(qty) > 0.0001:
+                        current_positions[sym] = qty
             elif state:
                 total_equity = state.get("total_equity", starting_budget)
                 for pos in state.get("positions", []):
@@ -632,6 +654,29 @@ class SessionManager:
                     metadata={"reason": risk_reason},
                 )
 
+            # 3b. Short position loss check (long_short mode only)
+            if risk_ok and pipeline.strategy_mode == "long_short" and pipeline.short_entry_prices:
+                prices_dict = {}
+                if prices is not None:
+                    for i, sym in enumerate(pipeline.executor.symbols):
+                        prices_dict[sym] = float(prices[i])
+                short_loss_limit = pipeline.data_config.get("short_loss_limit_pct", 1.0)
+                short_ok, short_reason = check_short_loss(
+                    positions=current_positions,
+                    current_prices=prices_dict,
+                    entry_prices=pipeline.short_entry_prices,
+                    short_loss_limit_pct=short_loss_limit,
+                )
+                if not short_ok:
+                    await kill_switch.activate(short_reason)
+                    weights = np.zeros(len(pipeline.executor.symbols))
+                    await self._publish_log(
+                        sid, "risk_reject",
+                        f"Short loss kill switch: {short_reason} — flattening all positions",
+                        level="warning",
+                        metadata={"reason": short_reason},
+                    )
+
             # 4. Generate rebalancing orders
             orders = pipeline.rebalancer.rebalance(
                 target_weights=weights,
@@ -651,6 +696,28 @@ class SessionManager:
                         symbol=order.symbol,
                         metadata={"side": order.side.value, "quantity": order.quantity},
                     )
+
+            # 6. Track short entry prices (long_short mode only)
+            if pipeline.strategy_mode == "long_short" and prices is not None:
+                for i, symbol in enumerate(pipeline.executor.symbols):
+                    old_qty = current_positions.get(symbol, 0.0)
+                    target_value = weights[i] * total_equity
+                    price = float(prices[i]) if prices[i] > 0 else 0
+                    new_qty = target_value / price if price > 0 else old_qty
+
+                    if old_qty >= 0 and new_qty < 0:
+                        # Opened new short position
+                        pipeline.short_entry_prices[symbol] = price
+                    elif old_qty < 0 and new_qty >= 0:
+                        # Covered short position
+                        pipeline.short_entry_prices.pop(symbol, None)
+                    elif old_qty < 0 and new_qty < 0 and abs(new_qty) > abs(old_qty):
+                        # Increased short — weighted average entry price
+                        prev_entry = pipeline.short_entry_prices.get(symbol, price)
+                        added_qty = abs(new_qty) - abs(old_qty)
+                        pipeline.short_entry_prices[symbol] = (
+                            prev_entry * abs(old_qty) + price * added_qty
+                        ) / abs(new_qty)
 
         except Exception:
             logger.exception("Session %s: strategy cycle error", sid)

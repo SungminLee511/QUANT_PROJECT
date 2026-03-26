@@ -95,6 +95,8 @@ def create_backtest_router(
 
         starting_cash = float(body.get("starting_cash", 10000))
         interval = body.get("interval", "1d")
+        strategy_mode = body.get("strategy_mode", "rebalance")
+        short_loss_limit_pct = float(body.get("short_loss_limit_pct", 1.0))
 
         # Get data config from body or session
         data_config = body.get("data_config")
@@ -107,6 +109,11 @@ def create_backtest_router(
         from backtest.engine import run_backtest_async
 
         try:
+            # Extract strategy_mode from data_config if not provided in body
+            if strategy_mode == "rebalance" and data_config:
+                strategy_mode = data_config.get("strategy_mode", strategy_mode)
+                short_loss_limit_pct = float(data_config.get("short_loss_limit_pct", short_loss_limit_pct))
+
             result = await run_backtest_async(
                 strategy_code=strategy_code,
                 symbols=symbols,
@@ -115,6 +122,8 @@ def create_backtest_router(
                 starting_cash=starting_cash,
                 interval=interval,
                 data_config=data_config,
+                strategy_mode=strategy_mode,
+                short_loss_limit_pct=short_loss_limit_pct,
             )
             return JSONResponse(result.to_dict())
 

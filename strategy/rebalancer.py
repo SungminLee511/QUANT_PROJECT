@@ -21,11 +21,12 @@ class WeightRebalancer:
     the minimal set of BUY/SELL orders to reach the target allocation.
     """
 
-    def __init__(self, session_id: str, symbols: list[str], exchange: Exchange, strategy_id: str = "v2"):
+    def __init__(self, session_id: str, symbols: list[str], exchange: Exchange, strategy_id: str = "v2", strategy_mode: str = "rebalance"):
         self.session_id = session_id
         self.symbols = symbols
         self.exchange = exchange
         self.strategy_id = strategy_id
+        self.strategy_mode = strategy_mode
 
     def rebalance(
         self,
@@ -79,9 +80,9 @@ class WeightRebalancer:
             qty = abs(diff_value) / price
             side = Side.BUY if diff_value > 0 else Side.SELL
 
-            # Cap sell quantity to current position — prevents short-sell attempts
-            # on adapters that don't support shorting (e.g. SimulationAdapter).
-            if side == Side.SELL:
+            # For long-only mode: cap sell quantity to current position.
+            # For long_short mode: allow selling beyond holdings (opens short).
+            if side == Side.SELL and self.strategy_mode != "long_short":
                 qty = min(qty, max(current_qty, 0.0))
                 if qty * price < MIN_ORDER_VALUE:
                     continue

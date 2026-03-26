@@ -88,8 +88,9 @@ class TestStrategyExecutor:
         data = self._make_data(symbols, lookback=20, trend="up")
         weights = ex.execute(data)
         assert weights.shape == (3,)
-        assert np.isclose(np.sum(np.abs(weights)), 1.0)
-        assert np.all(weights > 0)  # uptrend -> positive weights
+        # Rebalance mode: sum(w) <= 1 (no longer forced to exactly 1)
+        assert np.sum(weights) <= 1.0 + 1e-9
+        assert np.all(weights >= 0)  # uptrend -> positive weights (negatives clamped)
 
     def test_all_long_normalized(self):
         symbols = ["A", "B", "C"]
@@ -102,8 +103,9 @@ class TestStrategyExecutor:
         assert np.allclose(weights, 1 / 3)
 
     def test_long_short_normalized(self):
+        """FIFTY_FIFTY strategy with long_short mode preserves negative weights."""
         symbols = ["A", "B"]
-        ex = StrategyExecutor("test", symbols)
+        ex = StrategyExecutor("test", symbols, strategy_mode="long_short")
         ex.load_strategy(FIFTY_FIFTY)
         data = self._make_data(symbols)
         weights = ex.execute(data)

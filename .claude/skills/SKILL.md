@@ -100,10 +100,10 @@ QUANT_PROJECT/
 │       └── binance_source.py          # BinanceSource: 24hr ticker + order book — public API, no key needed
 │
 ├── strategy/                          # V2 Strategy engine (weight-based)
-│   ├── executor.py                    # V2 StrategyExecutor: compiles main(data), executes with safe builtins, normalizes weights
+│   ├── executor.py                    # V2 StrategyExecutor: compiles main(data), executes with safe builtins, mode-aware normalization (rebalance/long_short)
 │   ├── validator_v2.py                # V2 AST validator: checks main(data) signature, forbidden imports/names, data key cross-check
 │   ├── custom_validator.py            # Custom data function validator (allows network imports like requests, urllib)
-│   ├── rebalancer.py                  # WeightRebalancer: diffs target weights vs positions → OrderRequests (dust filtering)
+│   ├── rebalancer.py                  # WeightRebalancer: diffs target weights vs positions → OrderRequests (dust filtering, mode-aware short selling)
 │   ├── user_strategies/              # Directory for user-uploaded strategies (gitignored)
 │   │   └── .gitkeep
 │   └── examples/
@@ -119,7 +119,7 @@ QUANT_PROJECT/
 │   ├── base_adapter.py               # Abstract exchange adapter interface
 │   ├── binance_adapter.py            # Binance: order placement, retry, balance/position queries
 │   ├── alpaca_adapter.py             # Alpaca: order placement, retry, position queries
-│   ├── sim_adapter.py                # SimulationAdapter: instant fills, virtual cash/positions, no API key
+│   ├── sim_adapter.py                # SimulationAdapter: instant fills, virtual cash/positions, short selling support (long_short mode), no API key
 │   └── router.py                      # Routes OrderRequests to adapters, DB persistence, fill polling
 │
 ├── portfolio/                         # Portfolio tracking
@@ -173,10 +173,12 @@ QUANT_PROJECT/
     │   └── test_collector.py          # V2: DataCollector buffers, snapshots, custom data loading
     ├── test_strategy/
     │   ├── test_engine.py             # V2: StrategyExecutor load/execute/normalize, error handling
+    │   ├── test_executor.py           # V2: Mode-aware normalization (rebalance clamp, long_short preserve negatives, cash holding)
     │   ├── test_validator_v2.py       # V2: AST validation (main signature, forbidden imports/names)
-    │   ├── test_rebalancer.py         # V2: WeightRebalancer buy/sell/mixed/dust/shape
+    │   ├── test_rebalancer.py         # V2: WeightRebalancer buy/sell/mixed/dust/shape + long_short short opens/uncapped sells/cover
     │   └── test_custom_validator.py   # V2: custom data function validation
     ├── test_risk/test_manager.py      # Risk limit checks + V2 check_portfolio_risk
+    ├── test_risk/test_limits.py      # check_short_loss: profitable/under limit/at limit/over limit/custom %/multiple shorts
     ├── test_execution/test_router.py  # Order state machine transitions
     ├── test_portfolio/test_pnl.py     # P&L calculator, win rate
     └── test_session/
@@ -397,6 +399,9 @@ Field registry (`data/sources/__init__.py`) defines 16 fields with per-exchange 
 {
   "resolution": "1min",
   "exec_every_n": 5,
+  "schedule_mode": "always_on",
+  "strategy_mode": "rebalance",
+  "short_loss_limit_pct": 1.0,
   "fields": {
     "price": {"enabled": true, "lookback": 20, "source": "yfinance"},
     "volume": {"enabled": true, "lookback": 10, "source": "yfinance"},
@@ -420,6 +425,24 @@ Field registry (`data/sources/__init__.py`) defines 16 fields with per-exchange 
 
 Converts target portfolio weights into concrete buy/sell orders.
 
+### Strategy Modes
+
+| Mode | Weight Range | Constraint | Short Selling | Cash Holding |
+|------|-------------|------------|---------------|-------------|
+| `rebalance` (default) | `[0, 1]` | `sum(w) ≤ 1` | No (sells capped to holdings) | `1 - sum(w)` |
+| `long_short` | `[-1, 1]` | `sum(|w|) ≤ 1` | Yes (negative weight = short) | `1 - sum(|w|)` |
+
+Mode is set via `data_config.strategy_mode` and flows to: `StrategyExecutor`, `WeightRebalancer`, `SimulationAdapter`, backtest `_VirtualPortfolio`.
+
+### Short Loss Kill Switch
+
+When `strategy_mode == "long_short"`, a per-position kill switch protects against unbounded short losses:
+- Config: `data_config.short_loss_limit_pct` (default `1.0` = 100%)
+- Trigger: any short position's unrealized loss ≥ `limit × notional_at_entry`
+- Action: kill switch activates → all positions flattened → session stops
+- Entry prices tracked in `SessionPipeline.short_entry_prices` (live) or `_VirtualPortfolio.short_entry_prices` (backtest)
+- Binance sessions: `long_short` mode is auto-rejected (falls back to `rebalance`)
+
 ### Algorithm
 ```python
 for each symbol i:
@@ -429,6 +452,8 @@ for each symbol i:
     if |diff_value| > MIN_ORDER_VALUE ($1):
         qty = |diff_value| / prices[i]
         side = BUY if diff_value > 0 else SELL
+        # rebalance mode: cap sell to current holdings
+        # long_short mode: allow sell beyond holdings (opens short)
         → generate OrderRequest
 ```
 

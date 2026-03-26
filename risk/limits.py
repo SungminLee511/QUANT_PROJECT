@@ -139,3 +139,54 @@ def check_portfolio_risk(
         return False, reason
 
     return True, ""
+
+
+# ── Short Position Risk Check ──────────────────────────────────────
+
+
+def check_short_loss(
+    positions: dict[str, float],
+    current_prices: dict[str, float],
+    entry_prices: dict[str, float],
+    short_loss_limit_pct: float = 1.0,
+) -> tuple[bool, str]:
+    """Check if any short position has exceeded its loss limit.
+
+    For each short position (negative qty), compute:
+      unrealized_loss = |qty| * (current_price - entry_price)
+      notional = |qty| * entry_price
+
+    If unrealized_loss >= notional * short_loss_limit_pct → kill switch.
+
+    Args:
+        positions: symbol → qty (negative = short).
+        current_prices: symbol → current price.
+        entry_prices: symbol → price when short was opened.
+        short_loss_limit_pct: loss threshold as fraction of notional (1.0 = 100%).
+
+    Returns:
+        (True, "") if OK, (False, reason) if kill switch should fire.
+    """
+    for symbol, qty in positions.items():
+        if qty >= 0:
+            continue  # Only check shorts
+
+        entry_price = entry_prices.get(symbol)
+        current_price = current_prices.get(symbol)
+        if entry_price is None or current_price is None or entry_price <= 0:
+            continue
+
+        notional = abs(qty) * entry_price
+        unrealized_loss = abs(qty) * (current_price - entry_price)
+
+        if unrealized_loss <= 0:
+            continue  # Short is profitable
+
+        if unrealized_loss >= notional * short_loss_limit_pct:
+            return False, (
+                f"Short {symbol}: loss ${unrealized_loss:.0f} "
+                f">= {short_loss_limit_pct * 100:.0f}% of notional ${notional:.0f} "
+                f"(entry={entry_price:.2f}, now={current_price:.2f})"
+            )
+
+    return True, ""

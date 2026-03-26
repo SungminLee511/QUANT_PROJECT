@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
+from risk.limits import check_short_loss
 from strategy.executor import StrategyExecutor
 
 logger = logging.getLogger(__name__)
@@ -86,12 +87,15 @@ class BacktestResult:
 class _VirtualPortfolio:
     """In-memory portfolio for backtesting — rebalances via target weights."""
 
-    def __init__(self, starting_cash: float, symbols: list[str]):
+    def __init__(self, starting_cash: float, symbols: list[str], strategy_mode: str = "rebalance"):
         self.cash: float = starting_cash
         self.starting_cash: float = starting_cash
         self.symbols = symbols
-        self.positions: dict[str, float] = {}  # symbol -> quantity
+        self.strategy_mode = strategy_mode
+        self.positions: dict[str, float] = {}  # symbol -> quantity (negative = short)
         self.last_prices: dict[str, float] = {}
+        self.short_entry_prices: dict[str, float] = {}  # for kill switch tracking
+        self.short_count: int = 0  # number of short trades executed
 
     def update_prices(self, prices: dict[str, float]) -> None:
         self.last_prices.update(prices)
@@ -125,6 +129,8 @@ class _VirtualPortfolio:
 
         for i, symbol, price, diff_value in order_plan:
             qty = abs(diff_value) / price
+            old_qty = self.positions.get(symbol, 0.0)
+
             if diff_value > 0:
                 # BUY — can't spend more than available cash
                 max_buy_value = self.cash
@@ -133,7 +139,14 @@ class _VirtualPortfolio:
                     continue
                 qty = actual_value / price
                 self.cash -= qty * price
-                self.positions[symbol] = self.positions.get(symbol, 0.0) + qty
+                new_qty = old_qty + qty
+                self.positions[symbol] = new_qty
+
+                # Track short entry prices
+                if old_qty < 0 and new_qty >= 0:
+                    # Covered short
+                    self.short_entry_prices.pop(symbol, None)
+
                 trades.append(BacktestTrade(
                     timestamp=date_str, symbol=symbol, side="buy",
                     quantity=round(qty, 8), price=round(price, 6),
@@ -142,15 +155,40 @@ class _VirtualPortfolio:
                     equity_after=round(self.get_equity(), 2),
                 ))
             else:
-                # SELL — can't sell more than we have
-                max_sell_qty = self.positions.get(symbol, 0.0)
-                qty = min(qty, max_sell_qty)
-                if qty <= 0:
-                    continue
+                # SELL
+                if self.strategy_mode == "long_short":
+                    # Allow selling beyond holdings (opens/increases short)
+                    pass  # qty stays as computed from diff
+                else:
+                    # Long-only: can't sell more than we have
+                    qty = min(qty, max(old_qty, 0.0))
+                    if qty <= 0:
+                        continue
+
                 self.cash += qty * price
-                self.positions[symbol] = self.positions.get(symbol, 0.0) - qty
-                if self.positions[symbol] < 1e-10:
+                new_qty = old_qty - qty
+                self.positions[symbol] = new_qty
+
+                # Track short entry prices
+                if old_qty >= 0 and new_qty < 0:
+                    # Opened new short
+                    self.short_entry_prices[symbol] = price
+                    self.short_count += 1
+                elif old_qty < 0 and new_qty < 0 and abs(new_qty) > abs(old_qty):
+                    # Increased short — weighted average entry
+                    prev_entry = self.short_entry_prices.get(symbol, price)
+                    added_qty = abs(new_qty) - abs(old_qty)
+                    self.short_entry_prices[symbol] = (
+                        prev_entry * abs(old_qty) + price * added_qty
+                    ) / abs(new_qty)
+                    self.short_count += 1
+                elif old_qty < 0 and new_qty < 0:
+                    self.short_count += 1
+
+                # Clean up dust positions (long-only mode)
+                if self.strategy_mode != "long_short" and abs(new_qty) < 1e-10:
                     self.positions.pop(symbol, None)
+
                 trades.append(BacktestTrade(
                     timestamp=date_str, symbol=symbol, side="sell",
                     quantity=round(qty, 8), price=round(price, 6),
@@ -377,6 +415,8 @@ def run_backtest(
     starting_cash: float = 10000.0,
     interval: str = "1d",
     data_config: dict | None = None,
+    strategy_mode: str = "rebalance",
+    short_loss_limit_pct: float = 1.0,
 ) -> BacktestResult:
     """Run a V2 weight-based backtest.
 
@@ -419,7 +459,7 @@ def run_backtest(
         fields = {"price": 20}
 
     # 2. Load strategy
-    executor = StrategyExecutor(session_id="backtest", symbols=symbols)
+    executor = StrategyExecutor(session_id="backtest", symbols=symbols, strategy_mode=strategy_mode)
     try:
         executor.load_strategy(strategy_code)
     except Exception as e:
@@ -440,7 +480,7 @@ def run_backtest(
         return result
 
     # 4. Initialize portfolio and rolling buffers
-    portfolio = _VirtualPortfolio(starting_cash, symbols)
+    portfolio = _VirtualPortfolio(starting_cash, symbols, strategy_mode=strategy_mode)
     n_symbols = len(symbols)
 
     # Map of OHLCV column names → field names
@@ -540,6 +580,33 @@ def run_backtest(
                     weights = executor.execute(snapshot)
                     new_trades = portfolio.rebalance(weights, date_str)
                     result.trades.extend(new_trades)
+
+                    # Short position kill switch check
+                    if strategy_mode == "long_short" and portfolio.short_entry_prices:
+                        short_ok, short_reason = check_short_loss(
+                            positions=portfolio.positions,
+                            current_prices=portfolio.last_prices,
+                            entry_prices=portfolio.short_entry_prices,
+                            short_loss_limit_pct=short_loss_limit_pct,
+                        )
+                        if not short_ok:
+                            result.errors.append(f"Short kill switch on {date_str}: {short_reason}")
+                            # Flatten all positions
+                            flat_weights = np.zeros(n_symbols)
+                            flat_trades = portfolio.rebalance(flat_weights, date_str)
+                            result.trades.extend(flat_trades)
+                            # Record final equity and stop
+                            equity = portfolio.get_equity()
+                            result.equity_curve.append({
+                                "date": date_str,
+                                "equity": round(equity, 2),
+                                "cash": round(portfolio.cash, 2),
+                                "positions_value": round(portfolio.get_positions_value(), 2),
+                            })
+                            result.metrics = _compute_metrics(result.equity_curve, result.trades, starting_cash)
+                            result.success = True
+                            return result
+
                 except Exception as e:
                     result.errors.append(f"Strategy error on {date_str}: {e}")
 
@@ -601,6 +668,8 @@ async def run_backtest_async(
     starting_cash: float = 10000.0,
     interval: str = "1d",
     data_config: dict | None = None,
+    strategy_mode: str = "rebalance",
+    short_loss_limit_pct: float = 1.0,
 ) -> BacktestResult:
     """Async entry point — runs the sync backtest in a dedicated thread pool.
 
@@ -628,5 +697,7 @@ async def run_backtest_async(
                 starting_cash=starting_cash,
                 interval=interval,
                 data_config=data_config,
+                strategy_mode=strategy_mode,
+                short_loss_limit_pct=short_loss_limit_pct,
             ),
         )

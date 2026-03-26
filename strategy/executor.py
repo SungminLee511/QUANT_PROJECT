@@ -18,9 +18,10 @@ class StrategyExecutor:
         weights = executor.execute(data_snapshot)
     """
 
-    def __init__(self, session_id: str, symbols: list[str]):
+    def __init__(self, session_id: str, symbols: list[str], strategy_mode: str = "rebalance"):
         self.session_id = session_id
         self.symbols = symbols
+        self.strategy_mode = strategy_mode
         self._main_fn = None
         self._code = ""
 
@@ -58,7 +59,10 @@ class StrategyExecutor:
                   Always includes "tickers" -> list[str].
 
         Returns:
-            np.ndarray of shape [N] with sum(|w|) = 1, or zeros if strategy errors.
+            np.ndarray of shape [N]. Normalization depends on strategy_mode:
+            - "rebalance": weights in [0, 1], sum(w) <= 1 (long-only)
+            - "long_short": weights in [-1, 1], sum(|w|) <= 1
+            Returns zeros if strategy errors.
         """
         n = len(self.symbols)
 
@@ -85,12 +89,19 @@ class StrategyExecutor:
                 )
                 return np.zeros(n)
 
-            # Normalize so sum(|w|) = 1
-            abs_sum = np.sum(np.abs(weights))
-            if abs_sum > 0:
-                weights = weights / abs_sum
+            # Normalize based on strategy_mode
+            if self.strategy_mode == "long_short":
+                # Allow negatives (short), cap sum(|w|) at 1
+                weights = np.clip(weights, -1.0, 1.0)
+                abs_sum = np.sum(np.abs(weights))
+                if abs_sum > 1.0:
+                    weights = weights / abs_sum
             else:
-                weights = np.zeros(n)
+                # "rebalance" (long-only): clamp negatives, cap sum at 1
+                weights = np.clip(weights, 0.0, 1.0)
+                weight_sum = np.sum(weights)
+                if weight_sum > 1.0:
+                    weights = weights / weight_sum
 
             return weights
 

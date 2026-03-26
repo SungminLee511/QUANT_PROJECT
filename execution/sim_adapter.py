@@ -26,12 +26,14 @@ class SimulationAdapter(BaseExchangeAdapter):
         starting_budget: float,
         exchange: Exchange,
         redis: RedisClient,
+        strategy_mode: str = "rebalance",
     ):
         self._session_id = session_id
         self._exchange = exchange
         self._redis = redis
         self._cash = starting_budget
         self._starting_budget = starting_budget
+        self._strategy_mode = strategy_mode
         self._positions: dict[str, dict] = {}  # {symbol: {quantity, avg_price}}
         self._last_prices: dict[str, float] = {}
         self._orders: dict[str, dict] = {}  # {order_id: order_info}
@@ -80,35 +82,60 @@ class SimulationAdapter(BaseExchangeAdapter):
             cost = price * quantity
 
             if order_request.side == Side.BUY:
-                if cost > self._cash:
-                    # Adjust quantity to what we can afford
-                    quantity = self._cash / price
-                    if quantity <= 0:
-                        raise ValueError(f"Insufficient cash for {symbol}")
-                    cost = price * quantity
-
-                # Update sim portfolio
                 pos = self._positions.get(symbol, {"quantity": 0.0, "avg_price": 0.0})
-                old_value = pos["quantity"] * pos["avg_price"]
-                new_value = quantity * price
-                new_qty = pos["quantity"] + quantity
-                pos["avg_price"] = (old_value + new_value) / new_qty if new_qty > 0 else 0
-                pos["quantity"] = new_qty
-                self._positions[symbol] = pos
-                self._cash -= cost
+
+                if self._strategy_mode == "long_short" and pos["quantity"] < 0:
+                    # Covering a short — cost comes from cash
+                    self._cash -= cost
+                    new_qty = pos["quantity"] + quantity
+                    if abs(new_qty) <= 0.0001:
+                        new_qty = 0.0
+                        pos["avg_price"] = 0.0
+                    elif new_qty > 0:
+                        pos["avg_price"] = price
+                    pos["quantity"] = new_qty
+                    self._positions[symbol] = pos
+                else:
+                    # Normal buy (long position)
+                    if cost > self._cash:
+                        quantity = self._cash / price
+                        if quantity <= 0:
+                            raise ValueError(f"Insufficient cash for {symbol}")
+                        cost = price * quantity
+
+                    old_value = pos["quantity"] * pos["avg_price"]
+                    new_value = quantity * price
+                    new_qty = pos["quantity"] + quantity
+                    pos["avg_price"] = (old_value + new_value) / new_qty if new_qty > 0 else 0
+                    pos["quantity"] = new_qty
+                    self._positions[symbol] = pos
+                    self._cash -= cost
 
             elif order_request.side == Side.SELL:
                 pos = self._positions.get(symbol, {"quantity": 0.0, "avg_price": 0.0})
-                sell_qty = min(quantity, pos["quantity"])
-                if sell_qty <= 0:
-                    raise ValueError(f"No position in {symbol} to sell")
-                pos["quantity"] -= sell_qty
-                self._cash += sell_qty * price
-                if pos["quantity"] <= 0.0001:
-                    pos["quantity"] = 0.0
-                    pos["avg_price"] = 0.0
-                self._positions[symbol] = pos
-                quantity = sell_qty
+                if self._strategy_mode == "long_short":
+                    # Allow short selling — position can go negative
+                    pos["quantity"] -= quantity
+                    self._cash += quantity * price
+                    # Update avg_price for short positions
+                    if pos["quantity"] < 0:
+                        pos["avg_price"] = price  # simplified: use latest sell price
+                    elif abs(pos["quantity"]) <= 0.0001:
+                        pos["quantity"] = 0.0
+                        pos["avg_price"] = 0.0
+                    self._positions[symbol] = pos
+                else:
+                    # Long-only: cap sell to current holdings
+                    sell_qty = min(quantity, pos["quantity"])
+                    if sell_qty <= 0:
+                        raise ValueError(f"No position in {symbol} to sell")
+                    pos["quantity"] -= sell_qty
+                    self._cash += sell_qty * price
+                    if pos["quantity"] <= 0.0001:
+                        pos["quantity"] = 0.0
+                        pos["avg_price"] = 0.0
+                    self._positions[symbol] = pos
+                    quantity = sell_qty
 
             # Record the order
             self._orders[order_id] = {
@@ -152,11 +179,15 @@ class SimulationAdapter(BaseExchangeAdapter):
         )
 
     async def get_balances(self) -> dict:
-        """Return simulated cash balance."""
+        """Return simulated cash balance.
+
+        For short positions (negative qty), the position value is negative
+        (qty * price < 0), which correctly reduces total equity.
+        """
         total_value = self._cash + sum(
             pos["quantity"] * self._last_prices.get(sym, pos["avg_price"])
             for sym, pos in self._positions.items()
-            if pos["quantity"] > 0
+            if abs(pos["quantity"]) > 0.0001
         )
         return {
             "cash": self._cash,

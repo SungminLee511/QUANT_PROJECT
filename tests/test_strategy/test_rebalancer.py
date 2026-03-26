@@ -83,3 +83,59 @@ class TestWeightRebalancer:
         )
         for o in orders:
             assert o.exchange == Exchange.ALPACA
+
+    def test_rebalance_mode_sell_capped(self, rebalancer):
+        """In rebalance (default) mode, sell quantity is capped to current holdings."""
+        weights = np.array([-0.5, 0.5, 0.0])  # negative weight, but rebalance mode
+        positions = {"AAPL": 5.0}  # only 5 shares
+        prices = np.array([100.0, 100.0, 100.0])
+        orders = rebalancer.rebalance(weights, positions, 10000, prices)
+        # In rebalance mode, negative weight target → sell, but capped to 5 shares
+        sell_orders = [o for o in orders if o.side == Side.SELL]
+        for o in sell_orders:
+            if o.symbol == "AAPL":
+                assert o.quantity <= 5.0
+
+
+class TestLongShortRebalancer:
+    """Long-short mode: allows selling beyond holdings (opens short)."""
+
+    @pytest.fixture
+    def rebalancer(self):
+        return WeightRebalancer(
+            session_id="test",
+            symbols=["AAPL", "MSFT", "GOOGL"],
+            exchange=Exchange.ALPACA,
+            strategy_mode="long_short",
+        )
+
+    def test_short_opens_from_zero(self, rebalancer):
+        """Negative weight with no position → SELL order (opens short)."""
+        weights = np.array([0.3, -0.3, 0.0])
+        positions = {}  # no holdings
+        prices = np.array([100.0, 100.0, 100.0])
+        orders = rebalancer.rebalance(weights, positions, 10000, prices)
+        sides = {o.symbol: o.side for o in orders}
+        assert sides.get("AAPL") == Side.BUY
+        assert sides.get("MSFT") == Side.SELL  # short opened!
+
+    def test_short_sell_not_capped(self, rebalancer):
+        """In long_short mode, sell quantity is NOT capped to current holdings."""
+        weights = np.array([-0.5, 0.5, 0.0])
+        positions = {}  # zero holdings
+        prices = np.array([100.0, 100.0, 100.0])
+        orders = rebalancer.rebalance(weights, positions, 10000, prices)
+        sell_orders = [o for o in orders if o.side == Side.SELL and o.symbol == "AAPL"]
+        assert len(sell_orders) == 1
+        # Should try to sell $5000 worth = 50 shares, not capped to 0
+        assert sell_orders[0].quantity == pytest.approx(50.0, rel=0.01)
+
+    def test_flatten_short_generates_buy(self, rebalancer):
+        """Going from short position to zero weight → BUY to cover."""
+        weights = np.array([0.0, 0.0, 0.0])
+        positions = {"AAPL": -20.0}  # short 20 shares
+        prices = np.array([100.0, 100.0, 100.0])
+        total_equity = 10000 + 20 * 100  # cash + short value adjustment
+        orders = rebalancer.rebalance(weights, positions, total_equity, prices)
+        buy_orders = [o for o in orders if o.side == Side.BUY and o.symbol == "AAPL"]
+        assert len(buy_orders) == 1  # buy to cover
