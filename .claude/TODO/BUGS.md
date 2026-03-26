@@ -100,12 +100,7 @@
 
 ---
 
-## BUG-38: SimulationAdapter.get_positions() hides short positions
-
-- **Severity:** HIGH
-- **File:** `execution/sim_adapter.py` line 221
-- **Description:** Filter `if pos["quantity"] > 0` silently drops all short positions (negative quantity). Dashboard, rebalancer, any consumer sees incomplete portfolio. The sister method `get_balances()` correctly uses `abs(pos["quantity"]) > 0.0001`.
-- **Fix:** Change to `if abs(pos["quantity"]) > 0.0001`
+## ~~BUG-38: SimulationAdapter.get_positions() hides short positions — FIXED~~
 
 ---
 

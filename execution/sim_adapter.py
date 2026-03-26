@@ -218,7 +218,7 @@ class SimulationAdapter(BaseExchangeAdapter):
                 ),
             }
             for sym, pos in self._positions.items()
-            if pos["quantity"] > 0
+            if abs(pos["quantity"]) > 0.0001
         ]
 
     def get_last_price(self, symbol: str) -> float:
