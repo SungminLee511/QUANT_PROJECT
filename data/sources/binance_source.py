@@ -77,7 +77,7 @@ class BinanceSource:
                     opens[idx] = float(item.get("openPrice", 0))
                     highs[idx] = float(item.get("highPrice", 0))
                     lows[idx] = float(item.get("lowPrice", 0))
-                    closes[idx] = float(item.get("prevClosePrice", 0))
+                    closes[idx] = float(item.get("lastPrice", 0))
                     volumes[idx] = float(item.get("volume", 0))
                     vwaps[idx] = float(item.get("weightedAvgPrice", 0))
                     num_trades[idx] = float(item.get("count", 0))

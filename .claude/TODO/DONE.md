@@ -225,3 +225,10 @@
 
 **Fix:** Added retry loop with exponential backoff (1s → 60s max) in `_listen()` in `shared/redis_client.py`. On reconnect, re-subscribes to all tracked channels. Only exits on `CancelledError` or normal pubsub close.
 **Date:** 2026-03-26
+
+---
+
+## BUG-14: `close` field returns yesterday's close across all sources — HIGH (was)
+
+**Fix:** yfinance batch: changed `close` from `_prev_close(sym)` to `_col("Close", sym)`. yfinance fallback: changed from `prev_close` to `price`. Binance: changed from `prevClosePrice` to `lastPrice`. All three paths now return the current/latest close.
+**Date:** 2026-03-26

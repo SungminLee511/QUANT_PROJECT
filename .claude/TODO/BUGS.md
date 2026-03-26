@@ -4,15 +4,7 @@
 
 ---
 
-## BUG-14: `close` field returns yesterday's close across all sources — HIGH
-
-**Files:** `data/sources/yfinance_source.py:131-133`, `data/sources/yfinance_source.py:182-183`, `data/sources/binance_source.py:80`
-
-In yfinance: `close` maps to `_prev_close(sym)` (previous session's close, not today's). In binance: `close` maps to `prevClosePrice`. Meanwhile `price` correctly returns the current/latest price. A user enabling the `close` field expects the latest close, not yesterday's.
-
-**Impact:** Strategies using `data["close"]` get stale data — every trading signal based on close is wrong.
-
-**Fix:** Use current close (same as `price`) for the `close` field. If "previous close" is needed, add a separate `prev_close` field.
+## ~~BUG-14: `close` field returns yesterday's close across all sources — FIXED~~
 
 ---
 

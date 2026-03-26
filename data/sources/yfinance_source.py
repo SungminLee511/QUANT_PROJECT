@@ -129,8 +129,7 @@ class YFinanceSource:
                     elif field_name == "low":
                         values[i] = _col("Low", sym)
                     elif field_name == "close":
-                        pc = _prev_close(sym)
-                        values[i] = pc if pc else _col("Close", sym)
+                        values[i] = _col("Close", sym)
                     elif field_name == "volume":
                         values[i] = _col("Volume", sym)
                     elif field_name == "day_change_pct":
@@ -180,7 +179,7 @@ class YFinanceSource:
                 if "low" in fields:
                     result["low"][i] = float(fi.get("dayLow", 0) or fi.get("day_low", 0) or 0)
                 if "close" in fields:
-                    result["close"][i] = prev_close if prev_close else price
+                    result["close"][i] = price
                 if "volume" in fields:
                     result["volume"][i] = float(fi.get("lastVolume", 0) or fi.get("last_volume", 0) or 0)
                 if "day_change_pct" in fields:
