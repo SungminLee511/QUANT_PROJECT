@@ -365,3 +365,10 @@
 
 **Fix:** Moved `day_change_pct` out of `fundamental_fields`. Now computed per-bar from historical close prices via `(close[t] - close[t-1]) / close[t-1] * 100`. Falls back to fetching close history if close data isn't already in the result. Removed dead `day_change_pct` branch from fundamentals loop.
 **Date:** 2026-03-26
+
+---
+
+## BUG-34: Backtest rebalance processes buys before sells, causing cash starvation — MEDIUM (was)
+
+**Fix:** Separated `_VirtualPortfolio.rebalance` into a two-pass approach: compute all diffs first, then sort sells before buys. Sell proceeds now free up cash before buy orders execute, making results independent of symbol list ordering.
+**Date:** 2026-03-26

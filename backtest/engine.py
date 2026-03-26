@@ -105,20 +105,25 @@ class _VirtualPortfolio:
         if target_weights.shape != (n,):
             return trades
 
+        # BUG-34 fix: compute all diffs first, then process SELLs before BUYs
+        # so that sell proceeds are available as cash for subsequent buys.
+        order_plan = []  # (i, symbol, price, diff_value)
         for i, symbol in enumerate(self.symbols):
             price = self.last_prices.get(symbol, 0)
             if price <= 0:
                 continue
-
             target_value = target_weights[i] * total_equity
             current_qty = self.positions.get(symbol, 0.0)
             current_value = current_qty * price
             diff_value = target_value - current_value
-
-            # Skip tiny rebalances (< $1)
             if abs(diff_value) < 1.0:
                 continue
+            order_plan.append((i, symbol, price, diff_value))
 
+        # Sort: sells (diff < 0) first, then buys (diff > 0)
+        order_plan.sort(key=lambda x: (0 if x[3] < 0 else 1, x[0]))
+
+        for i, symbol, price, diff_value in order_plan:
             qty = abs(diff_value) / price
             if diff_value > 0:
                 # BUY — can't spend more than available cash

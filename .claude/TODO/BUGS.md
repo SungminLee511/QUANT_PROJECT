@@ -81,3 +81,7 @@
 ---
 
 ## ~~BUG-33: `day_change_pct` backfilled as repeated constant in `yfinance_source.fetch_history` — FIXED~~
+
+---
+
+## ~~BUG-34: Backtest rebalance processes buys before sells, causing cash starvation — FIXED~~
