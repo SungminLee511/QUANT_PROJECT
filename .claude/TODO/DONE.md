@@ -309,3 +309,10 @@
 
 **Fix:** Replaced `float("inf")` with `9999.99` for profit factor when there are winning trades but zero losses. Prevents `json.dumps` from raising `ValueError` on backtest results.
 **Date:** 2026-03-26
+
+---
+
+## BUG-24: Backtest `day_change_pct` field never computed — MEDIUM (was)
+
+**Fix:** Added `prev_close` array to track previous bar's close per symbol. Computes `day_change_pct = (close - prev_close) / prev_close * 100` as a special case alongside `vwap`. Updates `prev_close` after each bar.
+**Date:** 2026-03-26

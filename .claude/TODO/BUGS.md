@@ -44,15 +44,7 @@
 
 ---
 
-## BUG-24: Backtest `day_change_pct` field never computed — MEDIUM
-
-**File:** `backtest/engine.py:442-445`
-
-`col_to_field` has no mapping for `day_change_pct`, and there's no special-case computation (unlike `vwap`). If enabled in data config, the buffer stays at zero/NaN forever.
-
-**Impact:** Strategies depending on `day_change_pct` get all zeros in backtests, producing incorrect signals.
-
-**Fix:** Compute from consecutive close values per symbol (requires tracking previous close per bar).
+## ~~BUG-24: Backtest `day_change_pct` field never computed — FIXED~~
 
 ---
 

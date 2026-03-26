@@ -444,6 +444,9 @@ def run_backtest(
         "low": "Low", "volume": "Volume",
     }
 
+    # BUG-24 fix: track previous close per symbol for day_change_pct
+    prev_close = np.full(n_symbols, np.nan, dtype=np.float64)
+
     buffers: dict[str, np.ndarray] = {}
     fill_counts: dict[str, int] = {}
     for fname, lookback in fields.items():
@@ -492,8 +495,20 @@ def run_backtest(
                 l = float(row["Low"]) if pd.notna(row.get("Low")) else price
                 bar_values["vwap"][idx] = (h + l + price) / 3
 
+            # BUG-24 fix: day_change_pct = (close - prev_close) / prev_close * 100
+            if "day_change_pct" in fields:
+                if not np.isnan(prev_close[idx]) and prev_close[idx] != 0:
+                    bar_values["day_change_pct"][idx] = (price - prev_close[idx]) / prev_close[idx] * 100
+                else:
+                    bar_values["day_change_pct"][idx] = 0.0
+
         # Update portfolio prices
         portfolio.update_prices(prices_this_bar)
+
+        # BUG-24: update prev_close for next bar's day_change_pct
+        for sym, price in prices_this_bar.items():
+            idx = sym_to_idx[sym]
+            prev_close[idx] = price
 
         # Fill NaN with previous values or 0 for missing symbols
         for fname in fields:
