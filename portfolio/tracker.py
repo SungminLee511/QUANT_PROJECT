@@ -134,7 +134,7 @@ class PortfolioTracker:
 
                 pos["quantity"] -= delta_qty
                 self._cash += delta_qty * update.avg_price
-                if pos["quantity"] <= 0.0001:  # Effectively closed
+                if abs(pos["quantity"]) <= 0.0001:  # Effectively closed
                     pos["quantity"] = 0.0
                     pos["avg_entry_price"] = 0.0
 

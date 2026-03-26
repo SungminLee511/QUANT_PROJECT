@@ -92,12 +92,7 @@
 
 ---
 
-## BUG-36: PortfolioTracker zeroes out short positions immediately
-
-- **Severity:** HIGH
-- **File:** `portfolio/tracker.py` line 137
-- **Description:** `if pos["quantity"] <= 0.0001` catches all negative quantities, instantly wiping any short position to zero. Makes `check_short_loss()` dead code for live sessions and prevents short positions from persisting in the tracker.
-- **Fix:** Change to `if abs(pos["quantity"]) <= 0.0001`
+## ~~BUG-36: PortfolioTracker zeroes out short positions immediately — FIXED~~
 
 ---
 
