@@ -2,11 +2,11 @@
 
 > **MAINTENANCE:** This file is a living document. When you modify code in this project, update the relevant section here in the **same commit**. Added a module? Update the file tree. Changed a config key? Update the config section. New gotcha? Add it.
 
-**Trigger:** Use this skill when the user asks about automated trading infrastructure — market data ingestion, strategy engine, risk management, order execution, portfolio tracking, web dashboard, strategy code editor, session management, simulation mode, or Docker deployment for Binance (crypto) and Alpaca (US equities).
+**Trigger:** Use this skill when the user asks about automated trading infrastructure — market data ingestion, strategy engine, risk management, order execution, portfolio tracking, web dashboard, strategy code editor, session management, simulation mode, or native deployment for Binance (crypto) and Alpaca (US equities).
 
 **Project Root:** `/home/PROJECT/QUANT_PROJECT/`
 **Origin:** Custom-built modular trading platform — infrastructure only, strategy is a swappable component via web editor.
-**Conda Env:** `SML_env` — runs natively (Docker doesn't work on this server)
+**Conda Env:** `Quant_env` — dedicated environment (Python 3.12, all deps from requirements.txt)
 **Branch:** `feature/multi-session` (multi-session + simulation mode)
 
 ---
@@ -664,9 +664,18 @@ Auto-activates kill switch on drawdown or daily loss breach.
 
 ---
 
-## Running on This Server (Native, No Docker)
+## ⚠️ Running on This Server (Native ONLY — NO Docker) ⚠️
 
-Docker does not work on this server (restricted container, no `unshare` permission, `vfs` storage driver). Run all services natively instead.
+> **CRITICAL: Docker CANNOT run on this server.**
+> This is a SkyPilot-managed container (no `unshare` permission, `vfs` storage driver, no nested containers).
+> **NEVER suggest `docker`, `docker-compose`, or container-based solutions.**
+> `Dockerfile` and `docker-compose.yml` in the repo are **vestigial** — kept for reference only, never used.
+
+**Everything runs natively via `conda run -n Quant_env`.**
+- PostgreSQL 14 — manual `pg_ctl` start, data in `pgdata/` under project root
+- Redis — already running globally on the server
+- App — single `python -m scripts.run_monitor` process (FastAPI + SessionManager)
+- External access — Cloudflare tunnel (`cloudflared`)
 
 ### Startup Sequence
 
@@ -677,9 +686,9 @@ redis-cli CONFIG SET stop-writes-on-bgsave-error no
 # 2. Start PostgreSQL (data lives in QUANT_PROJECT/pgdata/)
 su postgres -s /bin/bash -c "/usr/lib/postgresql/14/bin/pg_ctl -D /home/PROJECT/QUANT_PROJECT/pgdata -l /home/PROJECT/QUANT_PROJECT/pgdata/logfile start"
 
-# 3. Start the app
+# 3. Start the app (init_db() in lifespan creates tables via create_all as safety net)
 cd /home/PROJECT/QUANT_PROJECT
-conda run -n SML_env nohup python -u -m scripts.run_monitor > /home/PROJECT/QUANT_PROJECT/app_log.txt 2>&1 &
+conda run -n Quant_env nohup python -u -m scripts.run_monitor > /home/PROJECT/QUANT_PROJECT/app_log.txt 2>&1 &
 
 # 4. Start Cloudflare tunnel for external access
 nohup cloudflared tunnel --url http://localhost:8080 > /home/PROJECT/QUANT_PROJECT/cloudflared_log.txt 2>&1 &
@@ -690,19 +699,32 @@ grep "trycloudflare.com" /home/PROJECT/QUANT_PROJECT/cloudflared_log.txt
 ### First-Time Setup (only once)
 
 ```bash
-# Create postgres user and init DB
+# Create postgres user and init DB cluster
 useradd -m postgres
 mkdir -p /var/run/postgresql && chown postgres:postgres /var/run/postgresql
 mkdir -p /home/PROJECT/QUANT_PROJECT/pgdata
 chown postgres:postgres /home/PROJECT/QUANT_PROJECT/pgdata
 su postgres -s /bin/bash -c "/usr/lib/postgresql/14/bin/initdb -D /home/PROJECT/QUANT_PROJECT/pgdata"
 
-# Create DB and user (matches config/default.yaml)
+# Start Postgres, create DB and user (matches config/default.yaml)
+su postgres -s /bin/bash -c "/usr/lib/postgresql/14/bin/pg_ctl -D /home/PROJECT/QUANT_PROJECT/pgdata -l /home/PROJECT/QUANT_PROJECT/pgdata/logfile start"
 su postgres -s /bin/bash -c "psql -c \"CREATE USER quant WITH PASSWORD 'changeme';\""
 su postgres -s /bin/bash -c "psql -c \"CREATE DATABASE quant_trader OWNER quant;\""
 
-# Install Python deps
-conda run -n SML_env pip install -q redis[hiredis] sqlalchemy[asyncio] asyncpg psycopg2-binary fastapi 'uvicorn[standard]' jinja2 python-multipart yfinance pydantic pydantic-settings pyyaml structlog python-dotenv
+# Install Python deps (all declared in requirements.txt)
+conda run -n Quant_env pip install -q -r requirements.txt
+
+# Run Alembic migrations to create tables (001_initial_schema.py)
+cd /home/PROJECT/QUANT_PROJECT
+QT_DATABASE_HOST=localhost QT_DB_PASSWORD=changeme conda run -n Quant_env alembic upgrade head
+```
+
+### After Fresh DB Init (pgdata deleted and recreated)
+
+```bash
+# Must re-run Alembic to create tables — init_db() create_all is a safety net but Alembic is primary
+cd /home/PROJECT/QUANT_PROJECT
+QT_DATABASE_HOST=localhost QT_DB_PASSWORD=changeme conda run -n Quant_env alembic upgrade head
 ```
 
 ### Shutdown
@@ -724,11 +746,49 @@ su postgres -s /bin/bash -c "/usr/lib/postgresql/14/bin/pg_ctl -D /home/PROJECT/
 
 **Note:** Previously 4 separate app services (data-feed, strategy, execution, monitor). Now consolidated into single `engine` service — `SessionManager` orchestrates all trading pipelines as asyncio tasks within one process.
 
+### App Boot Sequence (what `run_monitor` does internally)
+
+```
+1. Load config (default.yaml → {QT_ENV}.yaml → QT_* env vars)
+2. Setup structlog (JSON in prod, console in dev)
+3. Register SIGTERM/SIGINT signal handlers
+4. Start uvicorn with FastAPI app factory
+5. FastAPI lifespan startup:
+   a. init_engine(config) → create async SQLAlchemy engine (asyncpg)
+   b. init_db() → Base.metadata.create_all() (safety net)
+   c. Redis connect (pool max=20, decode_responses=True)
+   d. SessionManager instantiation
+   e. Auto-restart: query DB for status='active' sessions → start each
+6. Serving on 0.0.0.0:8080
+```
+
+### Dependencies
+
+All in `requirements.txt`. Key groups:
+- **Web:** fastapi, uvicorn[standard], jinja2, python-multipart
+- **DB:** sqlalchemy[asyncio], asyncpg, psycopg2-binary, alembic
+- **Redis:** redis[hiredis]
+- **Data:** yfinance, python-binance, alpaca-py
+- **Config:** pydantic, pydantic-settings, pyyaml, structlog, python-dotenv
+- **Test:** pytest, pytest-asyncio, pytest-cov
+
+---
+
+## Skill Assets & References
+
+| File | Content |
+|------|---------|
+| `.claude/skills/SKILL.md` | This file — primary architecture & conventions reference |
+| `.claude/skills/BUG_FIX_GUIDE.md` | Docker-era bug fixes (BUGs 1–8) + runtime bug fixes (BUGs 9–13) |
+| `.claude/skills/DATABASE_GUIDE.md` | Beginner-friendly DB layer walkthrough (Postgres, SQLAlchemy, Alembic) |
+| `.claude/skills/UI_GUIDE.md` | Detailed UI walkthrough — every page, button, and interaction |
+| `.claude/TODO/` | Open issues extracted from code review (bugs, security, perf, architecture) |
+
 ---
 
 ## Bug Fix Guide
 
-See **[BUG_FIX_GUIDE.md](BUG_FIX_GUIDE.md)** for known bugs, root causes, and step-by-step fixes. Key issues documented:
+See **[BUG_FIX_GUIDE.md](BUG_FIX_GUIDE.md)** for Docker-era bugs and runtime fixes. Key issues documented:
 
 | Bug | Severity | Summary |
 |-----|----------|---------|
@@ -744,6 +804,7 @@ See **[BUG_FIX_GUIDE.md](BUG_FIX_GUIDE.md)** for known bugs, root causes, and st
 | ~~BUG 10: Portfolio state missing positions~~ | **HIGH** | `_publish_state_loop` published symbol names only, not quantities → rebalancer always saw empty portfolio. **Fixed:** Added `positions` list with `symbol`, `quantity`, `avg_entry_price`. |
 | ~~BUG 11: _run_with_restart can't restart~~ | **HIGH** | Passed coroutine objects (single-use) → retry attempts raised `RuntimeError`. **Fixed:** Changed to accept lambda factory that creates a fresh coroutine per attempt. |
 | ~~BUG 12: Failed orders not persisted~~ | **MEDIUM** | `return` in except block skipped `_persist_order()` → failed orders invisible. **Fixed:** Failed orders now persisted with FAILED status + error log. |
+| ~~BUG 13: Sim order failures from state drift~~ | **HIGH** | `_run_strategy_cycle` read positions from Redis (PortfolioTracker, 5s lag) but SimAdapter checked its own internal `_positions` → sell orders for positions SimAdapter didn't know about. **Fixed:** Sim sessions now read positions directly from `pipeline.sim_adapter._positions` and equity from `sim_adapter.get_balances()`. Live sessions still use Redis. |
 
 ---
 
@@ -780,15 +841,17 @@ See **[BUG_FIX_GUIDE.md](BUG_FIX_GUIDE.md)** for known bugs, root causes, and st
 
 ## TODO
 
-### ~~1. Universe Presets for Session Creation~~ DONE
-Dropdown with presets (Mag 7, S&P 500 Top 30, NASDAQ Top 20, Crypto Top 10/20, Sector ETFs, Index ETFs) in `base.html`. Optgroups toggle by session type. Individual ticker input preserved alongside.
+See `.claude/TODO/` for detailed open issues. Summary:
 
-### ~~2. Backtesting Engine~~ DONE
-V2 weight-based backtesting with `_VirtualPortfolio`, rolling numpy buffers, metrics computation. Full UI with Chart.js equity curve, trade log, and metrics grid.
+| File | Category | Critical/High Items |
+|------|----------|-------------------|
+| `BUGS.md` | Logic errors | **OrderRequest metadata crash (CRITICAL)**, position size check no-op |
+| `SECURITY.md` | Security | exec() sandbox bypass, plaintext creds, API key exposure |
+| `CONCURRENCY.md` | Thread safety | SimAdapter race condition, Redis listener no-reconnect |
+| `PERFORMANCE.md` | Perf + errors | N+1 yfinance calls, eager DB loading, silent risk failures |
+| `CODE_QUALITY.md` | Code + arch | Duplicate classes, dead code, DB password URL encoding |
 
-### ~~3. Custom Data Pipeline + Strategy V2 Design~~ DONE
-- V2 strategy engine: `main(data)` → weights, DataCollector with rolling buffers, WeightRebalancer
-- Custom data functions: per-stock `fetch(tickers)` and global `fetch()` with network access
-- 3-tab editor UI: Data Config, Custom Data, Strategy Code
-- AST-based validators for both strategy and custom data code
-- Full test coverage (96 tests)
+### Completed Features
+- ~~Universe Presets for Session Creation~~ — DONE
+- ~~Backtesting Engine (V2)~~ — DONE
+- ~~Custom Data Pipeline + Strategy V2 Design~~ — DONE

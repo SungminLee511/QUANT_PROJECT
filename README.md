@@ -1,233 +1,122 @@
 # Quant Trader
 
-An automated trading system for crypto (Binance) and US equities (Alpaca) that runs 24/7 on a self-hosted server, with a clear migration path to AWS.
+An automated trading platform for crypto (Binance) and US equities (Alpaca). Weight-based portfolio strategies, real-time data collection, simulation mode, and a web dashboard — all in one process.
 
------
+---
 
 ## What This Is
 
-A modular, containerized trading platform built in Python. You plug in your trading strategy, configure your risk limits, and it handles everything else — data ingestion, order execution, position tracking, P&L reporting, and alerting.
+A modular trading platform built in Python. You write a `main(data)` function that receives rolling market data and returns portfolio weights. The platform handles data collection, weight normalization, order generation, risk management, and execution.
 
-The system is **not** a trading strategy. It’s the infrastructure that runs one. The strategy is a swappable component — you write a Python class that receives market data and returns buy/sell signals. The platform handles the rest.
+The system is **not** a trading strategy. It's the infrastructure that runs one. The strategy is a swappable Python function deployed through the web UI.
 
-## Architecture
+## Architecture (V2 — Weight-Based)
 
 ```
-┌─────────────┐   ┌─────────────┐
-│ Binance API  │   │  Alpaca API  │
-└──────┬───────┘   └──────┬───────┘
-       │   WebSocket/REST  │
-       └────────┬──────────┘
-                │
-       ┌────────▼────────┐
-       │  Data Service    │  ← Ingests & normalizes market data
-       └────────┬────────┘
-                │  Redis Pub/Sub
-       ┌────────▼────────┐
-       │ Strategy Engine  │  ← Your algorithm lives here
-       └────────┬────────┘
-                │  Signals
-       ┌────────▼────────┐     ┌──────────────────┐
-       │  Risk Manager    │────►  Order Execution   │
-       └─────────────────┘     └────────┬──────────┘
-                                        │  Fills
-                               ┌────────▼──────────┐
-                               │ Portfolio Tracker   │
-                               └────────┬──────────┘
-                                        │  Metrics
-                               ┌────────▼──────────┐
-                               │    Monitoring       │
-                               │  Dashboard + Alerts │
-                               └────────────────────┘
+DataCollector (rolling numpy buffers, configurable fields & resolution)
+  ↓
+StrategyExecutor (compiles & runs user's main(data) → weights)
+  ↓
+WeightRebalancer (diffs target weights vs current positions → orders)
+  ↓
+RiskManager (kill switch, drawdown, daily loss checks)
+  ↓
+OrderRouter + Exchange Adapter (sim or live)
+  ↓
+PortfolioTracker (positions, P&L, equity snapshots)
 ```
 
-Every box is a separate Docker container. They communicate through Redis pub/sub. State is persisted in PostgreSQL (with TimescaleDB for time-series data like equity curves).
+All components run as asyncio tasks within a single FastAPI process. Sessions are isolated by database foreign keys and Redis-namespaced channels. No Docker required — runs natively with conda.
 
 ## Features
 
-- **Multi-exchange support** — Binance for crypto, Alpaca for equities, unified under one interface
-- **Real-time data ingestion** — WebSocket streams for live price data, normalized into a common format
-- **Pluggable strategies** — Write a Python class, drop it in, configure via YAML
-- **Risk management** — Position limits, drawdown checks, daily loss limits, kill switch
-- **Order management** — Smart routing, retry logic, state tracking, exchange reconciliation
-- **Portfolio tracking** — Positions, realized/unrealized P&L, equity curve snapshots
-- **Web dashboard** — Real-time positions, P&L charts, system health, kill switch toggle
-- **Telegram alerts** — Trade notifications, risk warnings, error alerts, remote kill switch
-- **Structured logging** — JSON logs from every service for debugging and audit
-- **Dockerized** — One command to start everything, designed for AWS migration
+- **Multi-exchange** — Binance (crypto) + Alpaca (US equities), unified interface
+- **Weight-based strategies** — `main(data) → np.ndarray` of portfolio weights, auto-normalized
+- **Configurable data pipeline** — Per-field lookbacks, scrape resolution, multiple data sources per field
+- **Custom data functions** — User-written Python with network access (separate from sandboxed strategy code)
+- **Simulation mode** — Real market data, virtual execution (no API keys needed)
+- **Backtesting** — Historical replay with same rolling buffer format as live
+- **Multi-session** — Run multiple independent strategies simultaneously
+- **Web dashboard** — Equity curves, positions, orders, kill switch, real-time logs
+- **3-tab strategy editor** — Data Config, Custom Data, Strategy Code — all deployed together
+- **Risk management** — Kill switch, drawdown limits, daily loss limits
+- **Auto-restart** — Sessions resume on server reboot
 
 ## Quick Start
 
-### Prerequisites
-
-- Docker & Docker Compose
-- Binance API key (testnet for development)
-- Alpaca API key (paper trading for development)
-- Telegram bot token (optional, for alerts)
-
-### Setup
-
-1. Clone the repo and create your environment file:
+**Conda env:** `Quant_env` (Python 3.12, dedicated to this project)
 
 ```bash
-git clone <repo-url> && cd quant-trader
-cp .env.example .env
+# 1. Start Redis (if not running) and fix write errors
+redis-cli CONFIG SET stop-writes-on-bgsave-error no
+
+# 2. Start PostgreSQL
+su postgres -s /bin/bash -c "/usr/lib/postgresql/14/bin/pg_ctl -D /home/PROJECT/QUANT_PROJECT/pgdata -l /home/PROJECT/QUANT_PROJECT/pgdata/logfile start"
+
+# 3. Start the app
+conda run -n Quant_env nohup python -u -m scripts.run_monitor > app_log.txt 2>&1 &
+
+# 4. (Optional) Cloudflare tunnel for external access
+nohup cloudflared tunnel --url http://localhost:8080 > cloudflared_log.txt 2>&1 &
 ```
 
-1. Add your API keys to `.env`:
-
-```bash
-QT_BINANCE_API_KEY=your_key
-QT_BINANCE_API_SECRET=your_secret
-QT_ALPACA_API_KEY=your_key
-QT_ALPACA_API_SECRET=your_secret
-```
-
-1. Start everything:
-
-```bash
-docker-compose up -d
-```
-
-1. Open the dashboard at `http://localhost:8080`
-
-### Development Mode
-
-To run all services in a single process without Docker (useful for debugging):
-
-```bash
-pip install -r requirements.txt
-python -m scripts.run_all
-```
+Open the dashboard at `http://localhost:8080`. Default login: `admin` / `admin1234`.
 
 ## Writing a Strategy
 
-Your strategy is a Python class that extends `BaseStrategy`:
-
 ```python
-from strategy.base import BaseStrategy
-from shared.schemas import MarketTick, TradeSignal
-from shared.enums import Signal
+import numpy as np
 
-class MyStrategy(BaseStrategy):
-    async def on_tick(self, tick: MarketTick) -> TradeSignal | None:
-        # Your logic here
-        if should_buy(tick):
-            return TradeSignal(
-                symbol=tick.symbol,
-                signal=Signal.BUY,
-                strength=0.8,
-                strategy_id=self.strategy_id,
-            )
-        return None
-
-    async def on_bar(self, bar):
-        return None
+def main(data: dict) -> np.ndarray:
+    prices = data["price"]           # [N_symbols, lookback]
+    current = prices[:, -1]          # [N_symbols]
+    mean = prices.mean(axis=1)       # [N_symbols]
+    safe_mean = np.where(mean != 0, mean, 1.0)
+    deviation = (current - safe_mean) / safe_mean
+    return deviation  # auto-normalized to sum(|w|) = 1
 ```
 
-Point to it in your config:
+- **Input:** `data` dict with keys matching your configured fields (numpy arrays of shape `[N_symbols, lookback]`)
+- **Output:** `np.ndarray` of shape `[N_symbols]` — positive = long, negative = short, zero = flat
+- **Allowed imports:** `numpy`, `math`, `statistics`, `collections`, `itertools`, `functools`
+- **Forbidden:** `os`, `sys`, `subprocess`, network I/O, file I/O
 
-```yaml
-strategy:
-  id: "my_strategy_v1"
-  module: "strategy.my_strategy"
-  class_name: "MyStrategy"
-  params:
-    lookback: 20
-    threshold: 0.02
-```
+## Session Types
 
-Restart the strategy service and it picks up the new strategy.
-
-## Configuration
-
-Config is layered: `config/default.yaml` → `config/{env}.yaml` → environment variables.
-
-Environment variables override everything and use the `QT_` prefix with underscores for nesting:
-
-|Env Variable           |Overrides                      |
-|-----------------------|-------------------------------|
-|`QT_ENV`               |`app.env`                      |
-|`QT_REDIS_HOST`        |`redis.host`                   |
-|`QT_BINANCE_API_KEY`   |`binance.api_key`              |
-|`QT_ALPACA_API_KEY`    |`alpaca.api_key`               |
-|`QT_TELEGRAM_BOT_TOKEN`|`monitoring.telegram.bot_token`|
-
-## Risk Management
-
-Every signal passes through the risk manager before an order is placed. Built-in checks:
-
-|Check           |Default      |Description                         |
-|----------------|-------------|------------------------------------|
-|Position size   |10% of equity|Max allocation per position         |
-|Max positions   |10           |Total open positions allowed        |
-|Max drawdown    |5%           |Halt trading on peak-to-trough drop |
-|Daily loss limit|3%           |Halt trading on daily loss threshold|
-|Kill switch     |Off          |Manual emergency halt               |
-
-The kill switch can be triggered from the web dashboard, Telegram (`/kill`), or automatically when drawdown/daily loss limits are breached.
-
-## Monitoring
-
-### Web Dashboard
-
-Available at `http://localhost:8080` with:
-
-- Live positions and P&L
-- Equity curve chart
-- Recent orders and trades
-- System health indicators
-- Kill switch toggle
-
-### Telegram Bot
-
-Commands:
-
-- `/status` — System overview
-- `/pnl` — Today’s P&L
-- `/positions` — Open positions
-- `/kill` — Activate kill switch
-- `/resume` — Deactivate kill switch
-
-Automatic alerts for trade executions, risk events, and system errors.
+| Type | Data Source | Execution | API Keys |
+|------|-----------|-----------|----------|
+| Binance Simulation | Binance public WebSocket | Virtual (instant fills) | Not needed |
+| Alpaca Simulation | yfinance polling (~2s) | Virtual (instant fills) | Not needed |
+| Binance Live | Binance public WebSocket | Real Binance orders | Required |
+| Alpaca Live | yfinance polling | Real Alpaca orders | Required |
 
 ## Project Structure
 
 ```
-quant-trader/
-├── config/            # YAML configs per environment
-├── data/              # Market data ingestion (Binance + Alpaca feeds)
-├── strategy/          # Strategy engine + implementations
-├── risk/              # Risk management & kill switch
-├── execution/         # Order routing & exchange adapters
-├── portfolio/         # Position tracking & P&L
-├── monitoring/        # Dashboard, Telegram bot, logging
-├── db/                # SQLAlchemy models & migrations
-├── shared/            # Redis client, config loader, schemas, enums
-├── scripts/           # Service entry points
-├── tests/             # Unit + integration tests
-└── docker-compose.yml # Full stack orchestration
+QUANT_PROJECT/
+├── config/          # YAML configs (default, dev, prod)
+├── shared/          # Enums, schemas, config loader, Redis client
+├── session/         # SessionManager — multi-session orchestration
+├── data/            # DataCollector + per-source fetchers (yfinance, alpaca, binance)
+├── strategy/        # StrategyExecutor, WeightRebalancer, validators, examples
+├── risk/            # Kill switch, drawdown, daily loss, position limits
+├── execution/       # OrderRouter, exchange adapters (Binance, Alpaca, Simulation)
+├── portfolio/       # Position tracking, P&L, equity snapshots, reconciliation
+├── backtest/        # V2 backtesting engine (in-memory, no DB)
+├── monitoring/      # FastAPI app, auth, dashboard, editor, logs, settings, templates
+├── db/              # SQLAlchemy models, async session factory
+├── scripts/         # Entry points (run_monitor is the main one)
+└── tests/           # 96 unit tests
 ```
 
-## AWS Migration
+## Configuration
 
-The system is designed to move from a self-hosted server to AWS without code changes:
-
-|Self-Hosted       |AWS Equivalent |
-|------------------|---------------|
-|Docker Compose    |ECS Fargate    |
-|Local Redis       |ElastiCache    |
-|Local PostgreSQL  |RDS PostgreSQL |
-|`.env` file       |Secrets Manager|
-|stdout logs       |CloudWatch Logs|
-|Direct port access|ALB + Cognito  |
-
-Each Docker service becomes an ECS task definition. Infrastructure config changes, but application code stays the same.
+Layered: `config/default.yaml` → `config/{QT_ENV}.yaml` → `QT_*` environment variables.
 
 ## Safety Notes
 
-- **Always start with paper/testnet trading.** Binance testnet and Alpaca paper trading are configured by default in dev mode.
-- **Never commit API keys.** The `.env` file is gitignored.
-- **Test your strategy in backtest mode** before running it live.
-- **The risk manager is your safety net.** Configure conservative limits and tighten as you gain confidence.
-- **The dashboard has no authentication in v1.** Keep it behind a firewall or VPN when running on a public 
+- **Always start with simulation.** No API keys needed, uses real market data with virtual execution.
+- **Never commit `.env`** — it's gitignored.
+- **Risk manager is your safety net.** Kill switch auto-activates on drawdown/daily loss breach.
+- **Strategy code is sandboxed** — no network, no file I/O, no OS access.
+- **Custom data functions can access network** — `requests`, `urllib` allowed by design.
