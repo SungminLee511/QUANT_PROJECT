@@ -137,7 +137,10 @@ def _safe_builtins() -> dict:
     safe = {k: getattr(builtins, k) for k in allowed if hasattr(builtins, k)}
 
     # Whitelisted import: only allow safe modules
-    _IMPORT_WHITELIST = {"numpy", "math", "statistics", "collections", "itertools", "functools"}
+    _IMPORT_WHITELIST = {
+        "numpy", "math", "statistics", "collections", "itertools", "functools",
+        "datetime", "decimal", "typing", "logging", "pandas",
+    }
 
     def _restricted_import(name, *args, **kwargs):
         # Allow whitelisted modules and their submodules (e.g. numpy._core._methods)

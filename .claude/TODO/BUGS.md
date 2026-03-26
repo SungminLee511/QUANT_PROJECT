@@ -8,18 +8,7 @@
 
 ---
 
-## BUG-15: Validator ALLOWED_IMPORTS doesn't match executor _IMPORT_WHITELIST — HIGH
-
-**Files:** `strategy/validator_v2.py:14-20` vs `strategy/executor.py:140`
-
-Validator allows: `datetime, decimal, typing, logging, pandas` (plus shared ones).
-Executor allows: `numpy, math, statistics, collections, itertools, functools` only.
-
-Code using `import pandas` or `import datetime` passes validation but crashes at runtime with `ImportError`. The executor catches this and returns zero weights, silently flattening the portfolio.
-
-**Impact:** Validated strategy code fails silently at runtime. User thinks deploy succeeded.
-
-**Fix:** Synchronize the two lists — either add the extra modules to executor's whitelist, or remove them from the validator.
+## ~~BUG-15: Validator ALLOWED_IMPORTS doesn't match executor _IMPORT_WHITELIST — FIXED~~
 
 ---
 

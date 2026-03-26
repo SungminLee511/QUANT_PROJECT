@@ -232,3 +232,10 @@
 
 **Fix:** yfinance batch: changed `close` from `_prev_close(sym)` to `_col("Close", sym)`. yfinance fallback: changed from `prev_close` to `price`. Binance: changed from `prevClosePrice` to `lastPrice`. All three paths now return the current/latest close.
 **Date:** 2026-03-26
+
+---
+
+## BUG-15: Validator ALLOWED_IMPORTS doesn't match executor _IMPORT_WHITELIST — HIGH (was)
+
+**Fix:** Added `datetime, decimal, typing, logging, pandas` to executor's `_IMPORT_WHITELIST` in `strategy/executor.py`. Now matches validator's `ALLOWED_IMPORTS`. All are safe (no I/O, no network).
+**Date:** 2026-03-26
