@@ -45,6 +45,7 @@ class DataCollector:
         on_strategy_trigger: Optional[Callable] = None,
         on_scrape_complete: Optional[Callable] = None,
         alpaca_credentials: dict | None = None,
+        calendar: object | None = None,
     ):
         self.session_id = session_id
         self.symbols = symbols
@@ -94,6 +95,9 @@ class DataCollector:
         self._source_instances: dict[str, object] = {}
         self._alpaca_credentials = alpaca_credentials or {}
         self._init_sources()
+
+        # Market calendar (None = always collect, i.e. crypto or always_on)
+        self._calendar = calendar
 
         # State
         self._scrape_count = 0
@@ -302,6 +306,19 @@ class DataCollector:
         interval = self.resolution.seconds
 
         while self._running:
+            # Market calendar check — pause when market is closed
+            if self._calendar and not self._calendar.is_market_open():
+                next_open = self._calendar.next_open()
+                sleep_secs = (next_open - datetime.now(timezone.utc)).total_seconds()
+                sleep_secs = max(sleep_secs, 60)   # at least 60s
+                sleep_secs = min(sleep_secs, 300)   # at most 5 min between checks
+                logger.info(
+                    "Market closed — collector paused (session=%s, next_open=%s, sleep=%.0fs)",
+                    self.session_id, next_open.isoformat(), sleep_secs,
+                )
+                await asyncio.sleep(sleep_secs)
+                continue
+
             try:
                 await self._collect_once()
                 self._scrape_count += 1

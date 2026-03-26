@@ -43,3 +43,33 @@
 ---
 
 ## ~~Round 3 — ALL COMPLETE (BUG-32 through BUG-34)~~
+
+---
+
+## Round 4 — Features
+
+> Build order: Calendar first (correctness fix), then Vol Target (risk), then Tx Cost (accuracy).
+> Detailed implementation plans in separate files.
+
+### Feature 1: Market Calendar + Session Scheduling — HIGH
+**Plan:** [`FEATURE_MARKET_CALENDAR.md`](FEATURE_MARKET_CALENDAR.md)
+- `shared/market_calendar.py` (NEW) — market hours per exchange
+- `session/manager.py` — scheduler loop, auto-liquidate before close
+- `data/collector.py` — pause scraping outside market hours
+- `db/models.py` — `schedule_mode` column
+- `config/default.yaml` — `calendar:` section
+
+### Feature 2: Volatility Targeting Risk Overlay — HIGH
+**Plan:** [`FEATURE_VOL_TARGET.md`](FEATURE_VOL_TARGET.md)
+- `risk/vol_target.py` (NEW) — realized vol computation, weight scaling
+- `session/manager.py` — insert between risk check and rebalance
+- `backtest/engine.py` — vol scaling + Sharpe/vol metrics
+- `config/default.yaml` — `risk.vol_target` section
+
+### Feature 3: Transaction Cost Model — MEDIUM
+**Plan:** [`FEATURE_TX_COST.md`](FEATURE_TX_COST.md)
+- `shared/cost_model.py` (NEW) — commission + slippage estimation
+- `execution/sim_adapter.py` — apply fees to fills
+- `strategy/rebalancer.py` — cost-aware skip threshold
+- `backtest/engine.py` — fees in virtual portfolio + metrics
+- `config/default.yaml` — `costs:` section

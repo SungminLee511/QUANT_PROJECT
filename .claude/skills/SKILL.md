@@ -81,15 +81,16 @@ QUANT_PROJECT/
 │   ├── enums.py                       # Exchange, Side, Signal, OrderStatus, AssetType, OrderType, SessionType, DataResolution
 │   ├── schemas.py                     # Pydantic v2: MarketTick, OHLCVBar, TradeSignal, OrderRequest, OrderUpdate, LogEntry, etc.
 │   ├── config.py                      # YAML + env var hierarchical config loader (QT_ prefix)
-│   └── redis_client.py               # Async Redis: pub/sub, flags, connection pooling, session_channel() helper
+│   ├── redis_client.py               # Async Redis: pub/sub, flags, connection pooling, session_channel() helper
+│   └── market_calendar.py            # MarketCalendar: NYSE hours/holidays for Alpaca, 24/7 for Binance, liquidation timing
 │
 ├── session/                           # Multi-session orchestration
 │   ├── __init__.py
-│   ├── manager.py                     # SessionManager: create/start/stop/delete, pipeline lifecycle, on_strategy_trigger callback
+│   ├── manager.py                     # SessionManager: create/start/stop/delete, pipeline lifecycle, on_strategy_trigger, schedule_loop, liquidation
 │   └── schemas.py                     # SessionCreate, SessionUpdate Pydantic models
 │
 ├── data/                              # Market data ingestion (V2: DataCollector)
-│   ├── collector.py                   # V2 DataCollector: per-field source routing, rolling numpy buffers, custom data, strategy trigger
+│   ├── collector.py                   # V2 DataCollector: per-field source routing, rolling numpy buffers, custom data, strategy trigger, market calendar pause
 │   ├── normalizer.py                  # Exchange-specific → MarketTick/OHLCVBar conversion
 │   ├── custom_data.py                 # Custom data placeholder (expected return format: dict[str, dict])
 │   └── sources/                       # Data source registry and per-source fetchers

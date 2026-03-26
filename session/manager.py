@@ -29,6 +29,7 @@ from execution.sim_adapter import SimulationAdapter
 from portfolio.tracker import PortfolioTracker
 from risk.kill_switch import KillSwitch
 from risk.limits import check_portfolio_risk
+from shared.market_calendar import MarketCalendar
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ RESTART_DELAY = 5  # seconds
 DEFAULT_DATA_CONFIG = {
     "resolution": "1min",
     "exec_every_n": 1,
+    "schedule_mode": "always_on",
     "fields": {
         "price": {"enabled": True, "lookback": 20, "source": "yfinance"},
     },
@@ -53,9 +55,11 @@ DEFAULT_STRATEGY_PATH = Path(__file__).resolve().parent.parent / "strategy" / "e
 class SessionPipeline:
     """All runtime state for a single session."""
 
-    def __init__(self, session_id: str, session_type: SessionType):
+    def __init__(self, session_id: str, session_type: SessionType, schedule_mode: str = "always_on"):
         self.session_id = session_id
         self.session_type = session_type
+        self.schedule_mode = schedule_mode
+        self.calendar: MarketCalendar | None = None
         self.tasks: list[asyncio.Task] = []
         self.collector: DataCollector | None = None
         self.executor: StrategyExecutor | None = None
@@ -230,8 +234,12 @@ class SessionManager:
         strategy_code = info.get("strategy_code", "")
         data_config = info.get("data_config") or DEFAULT_DATA_CONFIG
         custom_data_code = info.get("custom_data_code") or []
+        schedule_mode = data_config.get("schedule_mode", "always_on")
 
-        pipeline = SessionPipeline(session_id, session_type)
+        pipeline = SessionPipeline(session_id, session_type, schedule_mode=schedule_mode)
+        # Create market calendar if schedule_mode is not always_on
+        if schedule_mode != "always_on":
+            pipeline.calendar = MarketCalendar(session_type.exchange)
         self._pipelines[session_id] = pipeline
 
         try:
@@ -407,6 +415,7 @@ class SessionManager:
             on_strategy_trigger=on_strategy_trigger,
             on_scrape_complete=on_scrape_complete,
             alpaca_credentials=alpaca_creds,
+            calendar=pipeline.calendar,
         )
 
         # Load custom data functions
@@ -440,6 +449,110 @@ class SessionManager:
                     name=f"session_{sid}_sim_price",
                 )
             )
+
+        # Market calendar schedule loop (liquidation, etc.)
+        if pipeline.calendar and pipeline.schedule_mode != "always_on":
+            pipeline.tasks.append(
+                asyncio.create_task(
+                    self._schedule_loop(pipeline, starting_budget),
+                    name=f"session_{sid}_schedule",
+                )
+            )
+
+    async def _schedule_loop(self, pipeline: SessionPipeline, starting_budget: float) -> None:
+        """Monitor market calendar and trigger liquidation before close."""
+        calendar = pipeline.calendar
+        if calendar is None or pipeline.schedule_mode == "always_on":
+            return
+
+        sid = pipeline.session_id
+        liquidate_minutes = self._config.get("calendar", {}).get(
+            "liquidate_minutes_before_close", 5
+        )
+        liquidated_today = False
+
+        while pipeline.running:
+            try:
+                if calendar.is_market_open():
+                    # Reset daily liquidation flag on new trading day
+                    if not liquidated_today:
+                        pass  # market open, haven't liquidated yet — normal operation
+
+                    # Check if we need to liquidate before close
+                    if (
+                        pipeline.schedule_mode == "market_hours_liquidate"
+                        and not liquidated_today
+                        and calendar.should_liquidate(liquidate_minutes)
+                    ):
+                        await self._liquidate_session(pipeline, starting_budget)
+                        liquidated_today = True
+                        await self._publish_log(
+                            sid, "schedule_event",
+                            f"Pre-close liquidation triggered ({liquidate_minutes} min before close)",
+                            metadata={"schedule_mode": pipeline.schedule_mode},
+                        )
+                else:
+                    # Market closed — reset liquidation flag for next day
+                    liquidated_today = False
+
+            except asyncio.CancelledError:
+                return
+            except Exception:
+                logger.exception("Schedule loop error (session=%s)", sid)
+
+            await asyncio.sleep(30)  # check every 30 seconds
+
+    async def _liquidate_session(self, pipeline: SessionPipeline, starting_budget: float) -> None:
+        """Force-rebalance to zero weights (flatten all positions)."""
+        if not pipeline.executor or not pipeline.rebalancer or not pipeline.collector:
+            return
+
+        sid = pipeline.session_id
+        prices = pipeline.collector.get_current_prices()
+        if prices is None:
+            logger.warning("Session %s: no prices for liquidation", sid)
+            return
+
+        # Get current positions
+        current_positions = {}
+        total_equity = starting_budget
+
+        if pipeline.sim_adapter is not None:
+            balances = await pipeline.sim_adapter.get_balances()
+            total_equity = balances.get("total_equity", starting_budget)
+            for sym, pos in pipeline.sim_adapter._positions.items():
+                if pos.get("quantity", 0) > 0.0001:
+                    current_positions[sym] = pos["quantity"]
+        else:
+            portfolio_key = session_channel(sid, "portfolio:state")
+            state = await self._redis.get_flag(portfolio_key)
+            if state:
+                total_equity = state.get("total_equity", starting_budget)
+                for pos in state.get("positions", []):
+                    current_positions[pos["symbol"]] = pos.get("quantity", 0)
+
+        # Zero weights → sell everything
+        weights = np.zeros(len(pipeline.executor.symbols))
+        orders = pipeline.rebalancer.rebalance(
+            target_weights=weights,
+            current_positions=current_positions,
+            total_equity=total_equity,
+            current_prices=prices,
+        )
+
+        if orders:
+            orders_channel = session_channel(sid, "execution:orders")
+            for order in orders:
+                await self._redis.publish(orders_channel, order)
+                await self._publish_log(
+                    sid, "liquidation_order",
+                    f"Liquidation: {order.side.value} {order.quantity:.6f} {order.symbol}",
+                    symbol=order.symbol,
+                    metadata={"side": order.side.value, "quantity": order.quantity},
+                )
+            logger.info("Session %s: liquidation orders submitted (%d orders)", sid, len(orders))
+        else:
+            logger.info("Session %s: no positions to liquidate", sid)
 
     async def _run_strategy_cycle(
         self,

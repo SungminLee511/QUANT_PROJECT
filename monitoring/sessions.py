@@ -8,7 +8,8 @@ from fastapi.responses import JSONResponse
 from monitoring.auth import get_current_user
 from session.manager import SessionManager
 from session.schemas import SessionCreate, SessionUpdate
-from shared.enums import SessionType
+from shared.enums import Exchange, SessionType
+from shared.market_calendar import MarketCalendar
 
 logger = logging.getLogger(__name__)
 
@@ -93,5 +94,27 @@ def create_sessions_router(session_manager: SessionManager) -> APIRouter:
             return JSONResponse({"error": "unauthorized"}, status_code=401)
         success = await session_manager.stop_session(session_id)
         return JSONResponse({"stopped": success})
+
+    @router.get("/{session_id}/market-status")
+    async def market_status(request: Request, session_id: str):
+        """Return current market status for a session's exchange."""
+        if not get_current_user(request):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        info = await session_manager.get_session_info(session_id)
+        if info is None:
+            return JSONResponse({"error": "not found"}, status_code=404)
+
+        session_type = SessionType(info["session_type"])
+        cal = MarketCalendar(session_type.exchange)
+        schedule_mode = (info.get("data_config") or {}).get("schedule_mode", "always_on")
+
+        return JSONResponse({
+            "exchange": session_type.exchange.value,
+            "schedule_mode": schedule_mode,
+            "is_open": cal.is_market_open(),
+            "next_open": cal.next_open().isoformat(),
+            "next_close": cal.next_close().isoformat(),
+            "minutes_to_close": cal.minutes_until_close(),
+        })
 
     return router

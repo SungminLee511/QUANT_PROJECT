@@ -64,6 +64,11 @@ sessions:
   default_sim_budget: 10000.0
   yfinance_poll_interval_sec: 2
 
+calendar:
+  liquidate_minutes_before_close: 5
+  pre_market_start_minutes: 0
+  post_market_end_minutes: 0
+
 monitoring:
   dashboard:
     host: "0.0.0.0"

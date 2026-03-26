@@ -372,3 +372,23 @@
 
 **Fix:** Separated `_VirtualPortfolio.rebalance` into a two-pass approach: compute all diffs first, then sort sells before buys. Sell proceeds now free up cash before buy orders execute, making results independent of symbol list ordering.
 **Date:** 2026-03-26
+
+---
+
+## FEATURE-1: Market Calendar + Session Scheduling
+
+**New file:** `shared/market_calendar.py` — `MarketCalendar` class with NYSE hours/holidays for Alpaca, 24/7 for Binance. Methods: `is_market_open()`, `next_open()`, `next_close()`, `minutes_until_close()`, `should_liquidate()`.
+
+**Changes:**
+- `session/manager.py` — `SessionPipeline` gets `schedule_mode` and `calendar` fields. Added `_schedule_loop()` (checks every 30s for liquidation timing) and `_liquidate_session()` (zero-weight rebalance). `DEFAULT_DATA_CONFIG` includes `schedule_mode: "always_on"`. Calendar passed to DataCollector.
+- `data/collector.py` — Accepts optional `calendar` param. `_collection_loop()` pauses scraping when market is closed, sleeping until next open.
+- `config/default.yaml` — Added `calendar:` section with `liquidate_minutes_before_close: 5`.
+- `monitoring/sessions.py` — Added `GET /api/sessions/{id}/market-status` endpoint.
+- 17 unit tests covering Binance (always open) and Alpaca (hours, weekends, holidays, liquidation timing).
+
+**Schedule modes** (stored in `data_config` JSON, configurable via Data Config tab):
+- `always_on` — 24/7, default for crypto
+- `market_hours` — pause outside NYSE hours, hold positions overnight
+- `market_hours_liquidate` — flatten all positions 5 min before close
+
+**Date:** 2026-03-26
