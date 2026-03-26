@@ -50,14 +50,6 @@ Symbol-by-symbol serial HTTP requests for order book data.
 
 ## Error Handling
 
-### ERR-2: Silent exception swallowing in `_publish_log` — MEDIUM
-
-**Files:** `session/manager.py`, `execution/router.py`, `risk/manager.py`
-
-All have `except Exception: pass` on log publishing. Makes debugging impossible.
-
-**Fix:** At minimum `logger.debug()` the exception.
-
 ### ERR-3: `get_session_info` DB errors not caught — MEDIUM
 
 **File:** `session/manager.py`

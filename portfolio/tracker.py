@@ -122,7 +122,7 @@ class PortfolioTracker:
             if symbol and price:
                 self._prices[symbol] = float(price)
         except Exception:
-            pass
+            logger.debug("Failed to parse market data update", exc_info=True)
 
     def get_total_equity(self) -> float:
         """Cash + sum of all position values at current prices."""

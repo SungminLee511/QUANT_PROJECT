@@ -85,3 +85,10 @@
 
 **Fix:** Marked class as deprecated with docstring. Still used by V1 `scripts/run_execution.py` so not deleted — just clearly documented as legacy.
 **Date:** 2026-03-26
+
+---
+
+## ERR-2: Silent exception swallowing in `_publish_log` — MEDIUM (was)
+
+**Fix:** Replaced `except Exception: pass` with `logger.debug(..., exc_info=True)` in `execution/router.py`, `risk/manager.py`, `portfolio/tracker.py`, and `session/manager.py` (collector stop + task cancellation).
+**Date:** 2026-03-26

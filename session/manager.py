@@ -250,7 +250,7 @@ class SessionManager:
             try:
                 await pipeline.collector.stop()
             except Exception:
-                pass
+                logger.debug("Error stopping collector for session %s", session_id, exc_info=True)
 
         # Cancel all tasks
         for task in pipeline.tasks:
@@ -258,8 +258,10 @@ class SessionManager:
         for task in pipeline.tasks:
             try:
                 await task
-            except (asyncio.CancelledError, Exception):
+            except asyncio.CancelledError:
                 pass
+            except Exception:
+                logger.debug("Error awaiting task cancellation for session %s", session_id, exc_info=True)
 
         del self._pipelines[session_id]
         await self._set_session_status(session_id, "stopped")
@@ -450,12 +452,23 @@ class SessionManager:
                 return
 
             # Get portfolio state for risk checks + rebalancing
+            # For sim sessions, read positions directly from SimAdapter (source of
+            # truth for execution) to avoid drift with the Redis-published state
+            # from PortfolioTracker which lags by up to 5 seconds.
             portfolio_key = session_channel(sid, "portfolio:state")
             state = await self._redis.get_flag(portfolio_key)
 
             current_positions = {}
             total_equity = starting_budget
-            if state:
+
+            if pipeline.sim_adapter is not None:
+                # Sim: read directly from the adapter that will execute the orders
+                balances = await pipeline.sim_adapter.get_balances()
+                total_equity = balances.get("total_equity", starting_budget)
+                for sym, pos in pipeline.sim_adapter._positions.items():
+                    if pos.get("quantity", 0) > 0.0001:
+                        current_positions[sym] = pos["quantity"]
+            elif state:
                 total_equity = state.get("total_equity", starting_budget)
                 for pos in state.get("positions", []):
                     current_positions[pos["symbol"]] = pos.get("quantity", 0)

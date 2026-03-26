@@ -130,7 +130,7 @@ class RiskManager:
             )
             await self._redis.publish(self._logs_channel, entry)
         except Exception:
-            pass
+            logger.debug("Failed to publish risk log", exc_info=True)
 
     async def _check_all(self, signal: TradeSignal) -> RiskCheckResult:
         """Run all risk checks sequentially."""

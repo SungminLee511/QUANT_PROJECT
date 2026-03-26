@@ -180,7 +180,7 @@ class OrderRouter:
             )
             await self._redis.publish(self._logs_channel, entry)
         except Exception:
-            pass
+            logger.debug("Failed to publish execution log", exc_info=True)
 
     def _get_adapter(self, exchange: Exchange):
         # If we have a sim adapter, always use it regardless of exchange
