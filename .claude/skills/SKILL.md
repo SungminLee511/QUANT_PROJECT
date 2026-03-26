@@ -880,7 +880,7 @@ See `.claude/TODO/` for detailed open issues. Summary:
 
 | File | Category | Critical/High Items |
 |------|----------|-------------------|
-| `BUGS.md` | Logic errors (Round 2) | 18 new bugs: `close` field stale data, partial fill double-count, persist order corruption, pipeline leak, Binance cancel broken, Alpaca blocks event loop, validator/executor mismatch, PubSub stale on reconnect |
+| `BUGS.md` | Logic errors | Round 2 (BUG 14-34): all FIXED. Round 3 (BUG 35-42): 8 open — equity endpoint crash, PortfolioTracker short position bugs, SimAdapter short bugs, backtest short metrics, validator KeyError, Binance day_change_pct inconsistency |
 | `SECURITY.md` | Security | Round 1 resolved. Round 2: custom validator missing `open` block |
 | `CONCURRENCY.md` | Thread safety | CONC-2/4 accepted (single-worker constraints) |
 | `PERFORMANCE.md` | Perf + errors | All resolved — see DONE.md |
@@ -890,3 +890,6 @@ See `.claude/TODO/` for detailed open issues. Summary:
 - ~~Universe Presets for Session Creation~~ — DONE
 - ~~Backtesting Engine (V2)~~ — DONE
 - ~~Custom Data Pipeline + Strategy V2 Design~~ — DONE
+- ~~Market Calendar + Session Scheduling~~ — DONE
+- ~~Strategy Mode Selector (rebalance / long_short)~~ — DONE
+- ~~Transaction Cost Model (commission for sim/backtest)~~ — DONE

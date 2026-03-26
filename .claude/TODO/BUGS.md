@@ -85,3 +85,77 @@
 ---
 
 ## ~~BUG-34: Backtest rebalance processes buys before sells, causing cash starvation — FIXED~~
+
+---
+
+## BUG-35: Equity endpoint crashes — `_Proxy` blocks private attribute access
+
+- **Severity:** CRITICAL
+- **File:** `monitoring/sessions.py` lines 109, 150 / root cause: `monitoring/app.py` `_Proxy.__getattr__`
+- **Description:** The `GET /{session_id}/equity` endpoint accesses `session_manager._pipelines` and `session_manager._redis`. But `session_manager` is a `_Proxy` object that raises `AttributeError` for any attribute starting with `_`. Every call to this endpoint returns HTTP 500.
+- **Fix:** Add public accessor properties to `SessionManager` (e.g., `get_pipeline(sid)`, `get_redis()`) and use those instead of direct private attribute access.
+
+---
+
+## BUG-36: PortfolioTracker zeroes out short positions immediately
+
+- **Severity:** HIGH
+- **File:** `portfolio/tracker.py` line 137
+- **Description:** `if pos["quantity"] <= 0.0001` catches all negative quantities, instantly wiping any short position to zero. Makes `check_short_loss()` dead code for live sessions and prevents short positions from persisting in the tracker.
+- **Fix:** Change to `if abs(pos["quantity"]) <= 0.0001`
+
+---
+
+## BUG-37: PortfolioTracker corrupts P&L and avg_entry_price on short trades
+
+- **Severity:** HIGH
+- **File:** `portfolio/tracker.py` lines 111-133
+- **Description:** Two sub-issues:
+  1. **SELL opening a short:** Records realized P&L on the *entire* sell qty including the portion that opens a new short (not closing a long). Inflates/deflates realized P&L.
+  2. **BUY covering a short:** Uses the long-accumulation weighted-average formula (`(old_value + new_value) / new_qty`), producing nonsensical `avg_entry_price` when old qty is negative. Also records zero realized P&L for the short cover.
+- **Fix:** Split logic: close the existing side first (record P&L on closed portion), then open the new side with remainder at the new price.
+
+---
+
+## BUG-38: SimulationAdapter.get_positions() hides short positions
+
+- **Severity:** HIGH
+- **File:** `execution/sim_adapter.py` line 221
+- **Description:** Filter `if pos["quantity"] > 0` silently drops all short positions (negative quantity). Dashboard, rebalancer, any consumer sees incomplete portfolio. The sister method `get_balances()` correctly uses `abs(pos["quantity"]) > 0.0001`.
+- **Fix:** Change to `if abs(pos["quantity"]) > 0.0001`
+
+---
+
+## BUG-39: SimulationAdapter short cover path skips cash sufficiency check
+
+- **Severity:** HIGH
+- **File:** `execution/sim_adapter.py` lines 91-92
+- **Description:** Buying to cover a short deducts `cost` from `_cash` with no check. The normal buy path (line 103) has `if cost > self._cash` guard + quantity clipping. The short-cover branch skips this, allowing `_cash` to go negative and corrupting all subsequent equity/balance calculations.
+- **Fix:** Add same cash sufficiency guard as normal buy path, or clip quantity to max affordable.
+
+---
+
+## BUG-40: Backtest _compute_metrics ignores short round-trips in win/loss analysis
+
+- **Severity:** HIGH
+- **File:** `backtest/engine.py` lines 381-399
+- **Description:** Win/loss analysis assumes buy-then-sell order per symbol. Short trades (sell-first, buy-to-cover) are never matched — sells are skipped when no prior buy exists, and the covering buy gets recorded as a new "buy" with no subsequent sell. `winning_trades`, `losing_trades`, `win_rate_pct`, `avg_win_pct`, `avg_loss_pct`, `profit_factor` are all incorrect for any backtest using `long_short` mode.
+- **Fix:** Track both long round-trips (buy→sell) and short round-trips (sell→buy).
+
+---
+
+## BUG-41: validator_v2 crashes on malformed custom_data entries
+
+- **Severity:** MEDIUM
+- **File:** `strategy/validator_v2.py` lines 144-147
+- **Description:** `custom["name"]` raises unhandled `KeyError` if a user sends `custom_data` entries without a `"name"` key via the validation API. Returns HTTP 500 instead of a validation error.
+- **Fix:** Use `custom.get("name", "")` with a guard or wrap in try/except.
+
+---
+
+## BUG-42: Binance day_change_pct inconsistent between live and historical
+
+- **Severity:** MEDIUM
+- **File:** `data/sources/binance_source.py` lines 84 vs 232-236
+- **Description:** Live `fetch()` returns Binance's `priceChangePercent` (24hr rolling change). Historical `fetch_history()` computes `(close-open)/open*100` (intra-bar change). Strategy sees a discontinuity at the backfill-to-live boundary. yfinance_source uses bar-over-bar close change — yet another definition.
+- **Fix:** Align historical to bar-over-bar close change to match yfinance behavior.
