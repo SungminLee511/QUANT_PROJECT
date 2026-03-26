@@ -40,15 +40,7 @@
 
 ---
 
-## BUG-23: `float("inf")` profit factor breaks JSON serialization — MEDIUM
-
-**File:** `backtest/engine.py:358`
-
-When wins > 0 but losses == 0, `profit_factor = float("inf")`. Python's `json.dumps(float("inf"))` raises `ValueError`.
-
-**Impact:** Backtest API returns 500 error when a backtest has only winning trades.
-
-**Fix:** Use a large finite number (e.g., `9999.99`) or `None`.
+## ~~BUG-23: `float("inf")` profit factor breaks JSON serialization — FIXED~~
 
 ---
 

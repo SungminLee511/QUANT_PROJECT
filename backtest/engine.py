@@ -355,7 +355,7 @@ def _compute_metrics(
         if gross_losses > 0:
             metrics.profit_factor = round(gross_wins / gross_losses, 2)
         elif gross_wins > 0:
-            metrics.profit_factor = float("inf")
+            metrics.profit_factor = 9999.99  # BUG-23 fix: avoid inf which breaks JSON
 
     return metrics
 

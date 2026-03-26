@@ -302,3 +302,10 @@
 
 **Fix:** In `_listen()` retry loop, close the old PubSub object and create a fresh one via `self._redis.pubsub()` before re-subscribing. Prevents stale connection from causing infinite retry loops where no messages flow.
 **Date:** 2026-03-26
+
+---
+
+## BUG-23: `float("inf")` profit factor breaks JSON serialization — MEDIUM (was)
+
+**Fix:** Replaced `float("inf")` with `9999.99` for profit factor when there are winning trades but zero losses. Prevents `json.dumps` from raising `ValueError` on backtest results.
+**Date:** 2026-03-26
