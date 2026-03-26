@@ -51,14 +51,6 @@ Missing `secure=True` on `set_cookie()`. Cookie can be sent over HTTP.
 
 ---
 
-## SEC-5: API keys exposed in session info API — HIGH
-
-**File:** `session/manager.py` `_session_to_dict()`
-
-Full `config_json` (with `api_key`, `api_secret`) returned in API responses.
-
-**Fix:** Mask keys in output: `"api_key": "****" + key[-4:]` or omit entirely.
-
 ---
 
 ## SEC-6: Session update accepts arbitrary `**kwargs` — MEDIUM

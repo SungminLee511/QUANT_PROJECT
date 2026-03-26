@@ -141,3 +141,10 @@
 
 **Fix:** Added `cleanup_session_logs()` in `monitoring/logs.py` and called it from `session/manager.py` `delete_session()`. Removes log buffer and subscription tracking when a session is deleted.
 **Date:** 2026-03-26
+
+---
+
+## SEC-5: API keys exposed in session info API — HIGH (was)
+
+**Fix:** Added `mask_secrets` parameter to `_session_to_dict()` and `get_session_info()`. API responses now show `"****" + last4` for api_key/api_secret. Internal `start_session` uses `mask_secrets=False` to get real keys.
+**Date:** 2026-03-26

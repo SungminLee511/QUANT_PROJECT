@@ -154,7 +154,7 @@ class SessionManager:
             sessions = result.scalars().all()
             return [self._session_to_dict(s) for s in sessions]
 
-    async def get_session_info(self, session_id: str) -> dict | None:
+    async def get_session_info(self, session_id: str, *, mask_secrets: bool = True) -> dict | None:
         """Get info about a single session."""
         from sqlalchemy import select
 
@@ -166,7 +166,7 @@ class SessionManager:
                 ts = result.scalar_one_or_none()
                 if ts is None:
                     return None
-                return self._session_to_dict(ts)
+                return self._session_to_dict(ts, mask_secrets=mask_secrets)
         except Exception:
             logger.exception("Failed to fetch session info for %s", session_id)
             return None
@@ -210,7 +210,7 @@ class SessionManager:
             logger.warning("Session %s already running", session_id)
             return True
 
-        info = await self.get_session_info(session_id)
+        info = await self.get_session_info(session_id, mask_secrets=False)
         if info is None:
             logger.error("Session %s not found", session_id)
             return False
@@ -626,8 +626,13 @@ class SessionManager:
             logger.exception("Failed to update session status for %s", session_id)
 
     @staticmethod
-    def _session_to_dict(ts: TradingSession) -> dict:
-        """Convert a TradingSession ORM object to a dict."""
+    def _session_to_dict(ts: TradingSession, *, mask_secrets: bool = True) -> dict:
+        """Convert a TradingSession ORM object to a dict.
+
+        Args:
+            mask_secrets: If True, mask api_key/api_secret in the returned config.
+                          Set to False for internal use (e.g. starting pipelines).
+        """
         config_data = json.loads(ts.config_json or "{}")
 
         # Parse data_config
@@ -646,6 +651,16 @@ class SessionManager:
             except (json.JSONDecodeError, TypeError):
                 pass
 
+        # Mask sensitive keys before returning config to API consumers
+        if mask_secrets:
+            safe_config = dict(config_data)
+            for key in ("api_key", "api_secret"):
+                if key in safe_config and safe_config[key]:
+                    val = safe_config[key]
+                    safe_config[key] = "****" + val[-4:] if len(val) >= 4 else "****"
+        else:
+            safe_config = config_data
+
         return {
             "id": ts.id,
             "name": ts.name,
@@ -658,6 +673,6 @@ class SessionManager:
             "strategy_code": ts.strategy_code or "",
             "data_config": data_config,
             "custom_data_code": custom_data_code,
-            "config": config_data,
+            "config": safe_config,
             "created_at": ts.created_at.isoformat() if ts.created_at else "",
         }
