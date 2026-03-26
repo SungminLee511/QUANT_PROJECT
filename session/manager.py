@@ -198,6 +198,14 @@ class SessionManager:
             if "starting_budget" in kwargs and kwargs["starting_budget"] is not None:
                 ts.starting_budget = kwargs["starting_budget"]
 
+            # BUG-19 fix: handle strategy_code, data_config, custom_data_code
+            if "strategy_code" in kwargs and kwargs["strategy_code"] is not None:
+                ts.strategy_code = kwargs["strategy_code"]
+            if "data_config" in kwargs and kwargs["data_config"] is not None:
+                ts.data_config = json.dumps(kwargs["data_config"]) if isinstance(kwargs["data_config"], dict) else kwargs["data_config"]
+            if "custom_data_code" in kwargs and kwargs["custom_data_code"] is not None:
+                ts.custom_data_code = json.dumps(kwargs["custom_data_code"]) if isinstance(kwargs["custom_data_code"], list) else kwargs["custom_data_code"]
+
             ts.config_json = json.dumps(config_data)
 
         return True

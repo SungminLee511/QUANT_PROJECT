@@ -288,3 +288,10 @@
 
 **Fix:** In `start_session`'s except block, cancel all orphaned asyncio tasks on the pipeline and remove the pipeline from `self._pipelines` dict before setting error status. Prevents resource leaks from partially-created tasks (collector, router, portfolio tracker, sim price listener).
 **Date:** 2026-03-26
+
+---
+
+## BUG-19: `update_session` silently ignores strategy/data config fields — HIGH (was)
+
+**Fix:** Added handling for `strategy_code`, `data_config`, and `custom_data_code` in `update_session`. Dict/list values are JSON-serialized before storage; string values passed through as-is.
+**Date:** 2026-03-26

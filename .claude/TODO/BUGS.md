@@ -24,15 +24,7 @@
 
 ---
 
-## BUG-19: `update_session` silently ignores `strategy_code`, `data_config`, `custom_data_code` — HIGH
-
-**File:** `session/manager.py:174-203`
-
-The method only handles `name, symbols, api_key, api_secret, testnet, starting_budget`. The sessions REST API whitelist (sessions.py:66) includes `strategy_code, data_config, custom_data_code`, but `update_session` discards them. PUT returns `{"updated": True}` but nothing was saved.
-
-**Impact:** REST API for updating strategy code is silently broken. (Editor deploy works via direct DB write, so the UI path is unaffected.)
-
-**Fix:** Add handling for the three fields in `update_session`.
+## ~~BUG-19: `update_session` silently ignores `strategy_code`, `data_config`, `custom_data_code` — FIXED~~
 
 ---
 
