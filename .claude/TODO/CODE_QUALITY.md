@@ -6,12 +6,6 @@
 
 ## Code Quality
 
-### CQ-4: Incorrect type hint — LOW
-
-**File:** `data/collector.py` (~line 48)
-
-`alpaca_credentials: dict = None` should be `dict | None = None`.
-
 ### CQ-5: `RiskManager` class largely dead code in V2 — LOW
 
 **File:** `risk/manager.py`

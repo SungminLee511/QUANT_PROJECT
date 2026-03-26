@@ -71,3 +71,10 @@
 
 **Fix:** Verified file is never imported anywhere. V2 uses `collector.load_custom_data_functions()` for dynamic custom data. Deleted the unused V1 file.
 **Date:** 2026-03-26
+
+---
+
+## CQ-4: Incorrect type hint — LOW (was)
+
+**Fix:** Changed `alpaca_credentials: dict = None` to `dict | None = None` in `data/collector.py`.
+**Date:** 2026-03-26

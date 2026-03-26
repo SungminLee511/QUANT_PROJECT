@@ -44,7 +44,7 @@ class DataCollector:
         exchange: Exchange,
         on_strategy_trigger: Optional[Callable] = None,
         on_scrape_complete: Optional[Callable] = None,
-        alpaca_credentials: dict = None,
+        alpaca_credentials: dict | None = None,
     ):
         self.session_id = session_id
         self.symbols = symbols
