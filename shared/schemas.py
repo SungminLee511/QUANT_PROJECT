@@ -70,6 +70,7 @@ class OrderRequest(BaseModel):
     timestamp: datetime = Field(default_factory=_utcnow)
     session_id: str = ""
     source: str = "risk"
+    metadata: dict = Field(default_factory=dict)
 
 
 class OrderUpdate(BaseModel):
