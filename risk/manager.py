@@ -198,4 +198,9 @@ class RiskManager:
                         self._portfolio_state["position_symbols"]
                     )
         except Exception:
-            pass  # Use cached state
+            logger.warning(
+                "Failed to refresh portfolio state from Redis (session=%s), "
+                "using cached state — risk decisions may be based on stale data",
+                self._session_id,
+                exc_info=True,
+            )

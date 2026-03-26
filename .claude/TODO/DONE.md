@@ -43,3 +43,10 @@
 
 **Fix:** Added `session_id` param to `Reconciler.__init__()`, uses `_session_channel()` for Redis key. Also documented that reconciler is not wired into V2 SessionPipeline (legacy only).
 **Date:** 2026-03-26
+
+---
+
+## ERR-1: Silent `pass` on Redis state refresh failure — HIGH (was)
+
+**Fix:** Replaced `except: pass` with `logger.warning()` including exc_info in `risk/manager.py` `_refresh_portfolio_state()`.
+**Date:** 2026-03-26
