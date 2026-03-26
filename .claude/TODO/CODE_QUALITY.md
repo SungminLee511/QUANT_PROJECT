@@ -6,14 +6,6 @@
 
 ## Code Quality
 
-### CQ-5: `RiskManager` class largely dead code in V2 — LOW
-
-**File:** `risk/manager.py`
-
-V2 pipeline calls `check_portfolio_risk()` directly, never instantiates `RiskManager`. The class and `_signal_to_order()` are unused V1 legacy.
-
-**Fix:** Remove unused class or mark as deprecated.
-
 ---
 
 ## Architecture

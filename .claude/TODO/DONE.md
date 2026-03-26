@@ -78,3 +78,10 @@
 
 **Fix:** Changed `alpaca_credentials: dict = None` to `dict | None = None` in `data/collector.py`.
 **Date:** 2026-03-26
+
+---
+
+## CQ-5: `RiskManager` class largely dead code in V2 — LOW (was)
+
+**Fix:** Marked class as deprecated with docstring. Still used by V1 `scripts/run_execution.py` so not deleted — just clearly documented as legacy.
+**Date:** 2026-03-26

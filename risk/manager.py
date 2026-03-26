@@ -19,7 +19,13 @@ logger = logging.getLogger(__name__)
 
 
 class RiskManager:
-    """Subscribes to strategy signals, runs risk checks, forwards approved orders."""
+    """V1 LEGACY — subscribes to strategy signals, runs risk checks, forwards approved orders.
+
+    .. deprecated::
+        V2 SessionPipeline calls ``check_portfolio_risk()`` from ``risk.limits``
+        directly.  This class is only used by ``scripts/run_execution.py``
+        (V1 standalone runner).  Do NOT use in new code.
+    """
 
     def __init__(self, config: dict, redis: RedisClient, session_id: str = ""):
         self._config = config
