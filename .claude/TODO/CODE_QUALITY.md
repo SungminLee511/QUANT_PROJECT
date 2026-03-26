@@ -10,14 +10,6 @@
 
 ## Architecture
 
-### ARCH-3: No CSRF protection — MEDIUM
-
-**Files:** `monitoring/sessions.py`, `monitoring/dashboard.py`
-
-All POST endpoints use cookie auth with no CSRF tokens. Malicious page could forge requests.
-
-**Fix:** Add CSRF token middleware (FastAPI has community packages for this).
-
 ### ARCH-4: Single Redis connection shared across sessions — MEDIUM
 
 **File:** `session/manager.py`

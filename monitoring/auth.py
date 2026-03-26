@@ -47,6 +47,7 @@ def create_session(response: Response, username: str, ttl_hours: int = 24) -> st
         "username": username,
         "created_at": time.time(),
         "ttl": ttl_hours * 3600,
+        "csrf_token": secrets.token_urlsafe(32),
     }
     response.set_cookie(
         key=SESSION_COOKIE,
@@ -98,3 +99,34 @@ def check_credentials(username: str, password: str, config: dict) -> bool:
         hmac.compare_digest(username, expected_user)
         and hmac.compare_digest(password, expected_pass)
     )
+
+
+# ── CSRF Protection (ARCH-3) ──────────────────────────────────────────
+
+
+def get_csrf_token(request: Request) -> str | None:
+    """Return the CSRF token for the current authenticated session."""
+    token = request.cookies.get(SESSION_COOKIE)
+    if not token or token not in _sessions:
+        return None
+    return _sessions[token].get("csrf_token")
+
+
+def validate_csrf(request: Request) -> bool:
+    """Validate CSRF token from X-CSRF-Token header against session.
+
+    Returns True if valid, False if invalid or missing.
+    Safe methods (GET, HEAD, OPTIONS) always pass.
+    """
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return True
+
+    expected = get_csrf_token(request)
+    if not expected:
+        return False
+
+    provided = request.headers.get("X-CSRF-Token", "")
+    if not provided:
+        return False
+
+    return hmac.compare_digest(provided, expected)

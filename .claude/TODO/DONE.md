@@ -190,3 +190,10 @@
 
 **Fix:** Added `_custom_data_builtins()` in `data/collector.py` with restricted builtins — blocks eval/exec/compile, provides whitelist-based `__import__` (allows network libs like requests/urllib but blocks os/subprocess/sys).
 **Date:** 2026-03-26
+
+---
+
+## ARCH-3: No CSRF protection — MEDIUM (was)
+
+**Fix:** Added per-session CSRF tokens stored in auth sessions. CSRF middleware in `monitoring/app.py` validates `X-CSRF-Token` header on all POST/PUT/DELETE requests (except login). Token auto-injected into `base.html` meta tag and all `fetch()` calls via JS monkey-patch.
+**Date:** 2026-03-26

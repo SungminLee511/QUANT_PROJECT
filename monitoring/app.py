@@ -8,7 +8,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from monitoring.auth import check_credentials, create_session, destroy_session, get_current_user, require_auth
+from fastapi.responses import JSONResponse as _JSONResponse
+from monitoring.auth import (
+    check_credentials, create_session, destroy_session,
+    get_csrf_token, get_current_user, require_auth, validate_csrf,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +114,47 @@ def create_app(config: dict) -> FastAPI:
 
     app = FastAPI(title="Quant Trader", lifespan=lifespan)
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+    # ── CSRF middleware (ARCH-3) ─────────────────────────────────────
+
+    @app.middleware("http")
+    async def csrf_middleware(request: Request, call_next):
+        """Validate CSRF token on state-changing requests to API endpoints."""
+        if request.method in ("POST", "PUT", "DELETE", "PATCH"):
+            # Skip CSRF for login form (no session yet) and non-API form posts
+            path = request.url.path
+            if path != "/login" and not validate_csrf(request):
+                return _JSONResponse(
+                    {"error": "CSRF token missing or invalid"},
+                    status_code=403,
+                )
+        return await call_next(request)
+
+    # Inject csrf_token into all template contexts
+    _orig_template_response = templates.TemplateResponse
+
+    def _csrf_template_response(request_or_name, *args, **kwargs):
+        # Handle both calling conventions
+        if isinstance(request_or_name, Request):
+            request = request_or_name
+            # templates.TemplateResponse(request, name, context)
+            if len(args) >= 2:
+                context = args[1]
+            else:
+                context = kwargs.get("context", {})
+        else:
+            # templates.TemplateResponse(name, context) — older style
+            request = args[0] if args else kwargs.get("request")
+            context = args[1] if len(args) >= 2 else kwargs.get("context", {})
+
+        if request and isinstance(context, dict):
+            csrf = get_csrf_token(request)
+            if csrf:
+                context["csrf_token"] = csrf
+
+        return _orig_template_response(request_or_name, *args, **kwargs)
+
+    templates.TemplateResponse = _csrf_template_response
 
     # ── Auth routes ──────────────────────────────────────────────────
 
