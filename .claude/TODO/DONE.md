@@ -344,3 +344,10 @@
 
 **Fix:** Added `_read_default_strategy()` helper in `editor.py` with try/except and a minimal fallback strategy. Applied to all 3 call sites in editor.py and 1 in backtest.py. Endpoints now return a safe fallback instead of 500 errors when the default file is missing.
 **Date:** 2026-03-26
+
+---
+
+## BUG-31: Non-numeric port env var silently passes through as string — MEDIUM (was)
+
+**Fix:** In `shared/config.py`, changed bare `except: pass` to log a warning and `continue` (skip the invalid value). In `db/session.py`, added `int()` cast with fallback to default port 5432 for non-numeric values.
+**Date:** 2026-03-26

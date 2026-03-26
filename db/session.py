@@ -16,7 +16,11 @@ def _build_url(config: dict) -> str:
     user = db.get("user", "quant")
     password = db.get("password", "changeme")
     host = db.get("host", "localhost")
-    port = db.get("port", 5432)
+    raw_port = db.get("port", 5432)
+    try:
+        port = int(raw_port)
+    except (ValueError, TypeError):
+        port = 5432  # BUG-31 fix: fallback if port is non-numeric
     name = db.get("name", "quant_trader")
     return f"postgresql+asyncpg://{quote_plus(user)}:{quote_plus(password)}@{host}:{port}/{name}"
 

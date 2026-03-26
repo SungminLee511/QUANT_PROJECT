@@ -1,11 +1,14 @@
 """Hierarchical config loading: default.yaml -> {env}.yaml -> env vars (QT_ prefix)."""
 
+import logging
 import os
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 
 _CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
@@ -54,8 +57,12 @@ def _apply_env_overrides(config: dict, prefix: str = "QT") -> dict:
             if path[-1] == "port":
                 try:
                     value = int(value)
-                except ValueError:
-                    pass
+                except (ValueError, TypeError):
+                    logger.warning(
+                        "Env var %s has non-numeric value '%s' for port — using default",
+                        env_key, value,
+                    )
+                    continue  # BUG-31 fix: skip instead of storing invalid string
             node[path[-1]] = value
 
     return config

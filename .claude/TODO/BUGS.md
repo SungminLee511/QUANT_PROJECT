@@ -72,10 +72,4 @@
 
 ---
 
-## BUG-31: Non-numeric port env var silently passes through as string — MEDIUM
-
-**Files:** `shared/config.py:56-58`, `db/session.py:19-21`
-
-If `QT_DATABASE_PORT` is set to a non-numeric string, `int()` cast fails silently (bare `except: pass`). The string flows through to the DB URL, causing an opaque connection error.
-
-**Fix:** Log a warning or raise on parse failure instead of silent pass.
+## ~~BUG-31: Non-numeric port env var silently passes through as string — FIXED~~
