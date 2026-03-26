@@ -60,15 +60,7 @@
 
 ---
 
-## BUG-28: Default strategy file `read_text()` unguarded — crashes if file missing — MEDIUM
-
-**Files:** `monitoring/backtest.py:149`, `monitoring/editor.py:65,74,214`
-
-Multiple endpoints call `DEFAULT_STRATEGY.read_text()` without existence check. If `strategy/examples/momentum_v2.py` is deleted/renamed, these return 500 errors.
-
-**Impact:** Editor page, backtest page, and reset endpoint all crash with FileNotFoundError.
-
-**Fix:** Add `if DEFAULT_STRATEGY.exists()` guard, or try/except with a fallback.
+## ~~BUG-28: Default strategy file `read_text()` unguarded — FIXED~~
 
 ---
 

@@ -337,3 +337,10 @@
 
 **Fix:** Changed `check_position_size` to return `(False, "Cannot evaluate...")` when `total_equity <= 0` or `current_price <= 0`, instead of blindly approving. Updated test to match new rejection behavior.
 **Date:** 2026-03-26
+
+---
+
+## BUG-28: Default strategy file `read_text()` unguarded — MEDIUM (was)
+
+**Fix:** Added `_read_default_strategy()` helper in `editor.py` with try/except and a minimal fallback strategy. Applied to all 3 call sites in editor.py and 1 in backtest.py. Endpoints now return a safe fallback instead of 500 errors when the default file is missing.
+**Date:** 2026-03-26

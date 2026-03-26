@@ -146,7 +146,11 @@ def create_backtest_router(
         from pathlib import Path
         from session.manager import DEFAULT_DATA_CONFIG
         default = Path(__file__).resolve().parent.parent / "strategy" / "examples" / "momentum_v2.py"
-        code = default.read_text()
+        # BUG-28 fix: guard against missing file
+        try:
+            code = default.read_text()
+        except (FileNotFoundError, OSError):
+            code = "import numpy as np\n\ndef main(data):\n    return np.zeros(data['price'].shape[0])\n"
         return JSONResponse({
             "code": code,
             "data_config": DEFAULT_DATA_CONFIG,

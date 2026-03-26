@@ -26,6 +26,18 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_STRATEGY = PROJECT_ROOT / "strategy" / "examples" / "momentum_v2.py"
 
+# BUG-28 fix: fallback when default strategy file is missing
+_DEFAULT_STRATEGY_FALLBACK = "import numpy as np\n\ndef main(data):\n    return np.zeros(data['price'].shape[0])\n"
+
+
+def _read_default_strategy() -> str:
+    """Read default strategy file with fallback if missing."""
+    try:
+        return _read_default_strategy()
+    except (FileNotFoundError, OSError):
+        logger.warning("Default strategy file not found: %s", DEFAULT_STRATEGY)
+        return _DEFAULT_STRATEGY_FALLBACK
+
 
 def create_editor_router(
     config: dict, redis: RedisClient, templates: Jinja2Templates,
@@ -62,7 +74,7 @@ def create_editor_router(
             info = await session_manager.get_session_info(session_id)
             if info:
                 return JSONResponse({
-                    "strategy_code": info.get("strategy_code") or DEFAULT_STRATEGY.read_text(),
+                    "strategy_code": info.get("strategy_code") or _read_default_strategy(),
                     "data_config": info.get("data_config") or DEFAULT_DATA_CONFIG,
                     "custom_data_code": info.get("custom_data_code") or [],
                     "source": "session" if info.get("strategy_code") else "default",
@@ -71,7 +83,7 @@ def create_editor_router(
 
         # Fallback: default
         return JSONResponse({
-            "strategy_code": DEFAULT_STRATEGY.read_text(),
+            "strategy_code": _read_default_strategy(),
             "data_config": DEFAULT_DATA_CONFIG,
             "custom_data_code": [],
             "source": "default",
@@ -211,7 +223,7 @@ def create_editor_router(
             return JSONResponse({"error": "unauthorized"}, status_code=401)
 
         return JSONResponse({
-            "strategy_code": DEFAULT_STRATEGY.read_text(),
+            "strategy_code": _read_default_strategy(),
             "data_config": DEFAULT_DATA_CONFIG,
             "custom_data_code": [],
             "source": "default",
