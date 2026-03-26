@@ -4,16 +4,6 @@
 
 ---
 
-## BUG-4: Router logs "FILLED" for non-sim PLACED orders — MEDIUM
-
-**File:** `execution/router.py` (lines 139–147)
-
-After a real (non-sim) order is placed, code falls through to log publishing which always says "FILLED" and references `order.filled_quantity` (which is 0.0 for a just-PLACED order). Misleading logs + zero qty/price in fill records.
-
-**Fix:** Only log fill info for sim orders or after confirmed fill status check.
-
----
-
 ## BUG-5: Backtest `close` field has no mapping — LOW
 
 **File:** `backtest/engine.py` (line 442)

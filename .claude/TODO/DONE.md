@@ -22,3 +22,10 @@
 
 **Fix:** Added `urllib.parse.quote_plus()` for user and password in `db/session.py` `_build_url()`.
 **Date:** 2026-03-26
+
+---
+
+## BUG-4: Router logs "FILLED" for non-sim PLACED orders — MEDIUM (was)
+
+**Fix:** Split log path — checks `order.status == FILLED` before logging fill details. Live PLACED orders now log "PLACED" with correct info.
+**Date:** 2026-03-26

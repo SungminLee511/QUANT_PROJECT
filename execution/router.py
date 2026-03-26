@@ -145,15 +145,25 @@ class OrderRouter:
             )
             await self._redis.publish(self._update_channel, update)
 
-            # Log the fill
-            await self._publish_log(
-                "order_fill", request.symbol,
-                f"FILLED {request.side.value.upper()} {request.symbol} qty={order.filled_quantity:.6f} @ ${order.avg_price:.2f}",
-                metadata={
-                    "side": request.side.value, "quantity": order.filled_quantity,
-                    "price": order.avg_price, "order_id": order_id,
-                },
-            )
+            # Log based on actual status
+            if order.status == OrderStatus.FILLED:
+                await self._publish_log(
+                    "order_fill", request.symbol,
+                    f"FILLED {request.side.value.upper()} {request.symbol} qty={order.filled_quantity:.6f} @ ${order.avg_price:.2f}",
+                    metadata={
+                        "side": request.side.value, "quantity": order.filled_quantity,
+                        "price": order.avg_price, "order_id": order_id,
+                    },
+                )
+            else:
+                await self._publish_log(
+                    "order_placed", request.symbol,
+                    f"PLACED {request.side.value.upper()} {request.symbol} qty={request.quantity:.6f}",
+                    metadata={
+                        "side": request.side.value, "quantity": request.quantity,
+                        "order_id": order_id,
+                    },
+                )
 
         except Exception:
             logger.exception("Error processing order request (session=%s)", self._session_id)
