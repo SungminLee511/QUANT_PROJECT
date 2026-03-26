@@ -116,9 +116,4 @@
 
 ---
 
-## BUG-42: Binance day_change_pct inconsistent between live and historical
-
-- **Severity:** MEDIUM
-- **File:** `data/sources/binance_source.py` lines 84 vs 232-236
-- **Description:** Live `fetch()` returns Binance's `priceChangePercent` (24hr rolling change). Historical `fetch_history()` computes `(close-open)/open*100` (intra-bar change). Strategy sees a discontinuity at the backfill-to-live boundary. yfinance_source uses bar-over-bar close change — yet another definition.
-- **Fix:** Align historical to bar-over-bar close change to match yfinance behavior.
+## ~~BUG-42: Binance day_change_pct inconsistent between live and historical — FIXED~~

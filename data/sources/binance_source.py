@@ -229,13 +229,19 @@ class BinanceSource:
                         field_arrays["vwap"][idx, col] = (quote_vol / v) if v > 0 else c
                     if "num_trades" in field_arrays:
                         field_arrays["num_trades"][idx, col] = trades
-                    if "day_change_pct" in field_arrays:
-                        # Per-bar change pct: (close - open) / open * 100
-                        field_arrays["day_change_pct"][idx, col] = (
-                            ((c - o) / o * 100) if o > 0 else 0.0
-                        )
-
             except Exception:
                 logger.warning("Binance klines fetch error for %s", symbol, exc_info=True)
+
+        # Compute day_change_pct as bar-over-bar close change (matches yfinance behavior)
+        if "day_change_pct" in field_arrays:
+            close_arr = field_arrays.get("close") or field_arrays.get("price")
+            if close_arr is not None:
+                dcp = field_arrays["day_change_pct"]
+                for i in range(n):
+                    for j in range(1, lookback):
+                        prev_val = close_arr[i, j - 1]
+                        curr_val = close_arr[i, j]
+                        if not np.isnan(prev_val) and not np.isnan(curr_val) and prev_val != 0:
+                            dcp[i, j] = (curr_val - prev_val) / prev_val * 100
 
         return {k: v for k, v in field_arrays.items() if k in bar_fields}

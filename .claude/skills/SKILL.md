@@ -880,7 +880,7 @@ See `.claude/TODO/` for detailed open issues. Summary:
 
 | File | Category | Critical/High Items |
 |------|----------|-------------------|
-| `BUGS.md` | Logic errors | Round 2 (BUG 14-34): all FIXED. Round 3 (BUG 35-42): 8 open — equity endpoint crash, PortfolioTracker short position bugs, SimAdapter short bugs, backtest short metrics, validator KeyError, Binance day_change_pct inconsistency |
+| `BUGS.md` | Logic errors | Round 2 (BUG 14-34): all FIXED. Round 3 (BUG 35-42): all FIXED — equity endpoint, PortfolioTracker short positions, SimAdapter short bugs, backtest short metrics, validator KeyError, Binance day_change_pct |
 | `SECURITY.md` | Security | Round 1 resolved. Round 2: custom validator missing `open` block |
 | `CONCURRENCY.md` | Thread safety | CONC-2/4 accepted (single-worker constraints) |
 | `PERFORMANCE.md` | Perf + errors | All resolved — see DONE.md |
