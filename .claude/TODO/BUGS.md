@@ -4,21 +4,6 @@
 
 ---
 
-## BUG-3: `check_position_size` always approves — HIGH
-
-**File:** `risk/limits.py` (lines 30–33)
-
-```python
-estimated_value = total_equity * max_pct   # e.g. 10000 * 0.10 = 1000
-if estimated_value > total_equity:          # 1000 > 10000 → always False
-```
-
-The risk check is a no-op — it compares the *limit* against equity, not the *proposed position* against the limit.
-
-**Fix:** Compare actual signal/position value: `if position_value > total_equity * max_pct`.
-
----
-
 ## BUG-4: Router logs "FILLED" for non-sim PLACED orders — MEDIUM
 
 **File:** `execution/router.py` (lines 139–147)

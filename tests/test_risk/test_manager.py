@@ -37,10 +37,21 @@ def buy_signal():
 
 
 class TestPositionSize:
-    def test_approves_within_limits(self, buy_signal, risk_config):
+    def test_approves_within_limits(self, risk_config):
+        """Signal strength 0.05 → 5% of equity, under 10% limit."""
+        small_signal = TradeSignal(
+            symbol="BTCUSDT", signal=Signal.BUY, strength=0.05, strategy_id="test",
+        )
+        state = {"total_equity": 10000, "prices": {"BTCUSDT": 50000}}
+        approved, reason = check_position_size(small_signal, state, risk_config)
+        assert approved is True
+
+    def test_rejects_oversized(self, buy_signal, risk_config):
+        """Signal strength 0.8 → 80% of equity, exceeds 10% limit."""
         state = {"total_equity": 10000, "prices": {"BTCUSDT": 50000}}
         approved, reason = check_position_size(buy_signal, state, risk_config)
-        assert approved is True
+        assert approved is False
+        assert "exceed" in reason.lower()
 
     def test_no_equity_allows_through(self, buy_signal, risk_config):
         state = {"total_equity": 0, "prices": {}}

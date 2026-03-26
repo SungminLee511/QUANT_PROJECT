@@ -27,10 +27,15 @@ def check_position_size(
     if total_equity <= 0 or current_price <= 0:
         return True, ""  # Can't evaluate — allow (will be caught by exchange)
 
-    # Estimate position value (use strength as a sizing hint: strength * max_pct)
-    estimated_value = total_equity * max_pct
-    if estimated_value > total_equity:
-        return False, f"Position would exceed {max_pct*100:.0f}% of equity"
+    # Estimate position value from signal strength and current price
+    # strength is 0.0–1.0 sizing hint; multiply by equity for estimated position value
+    estimated_value = signal.strength * total_equity
+    max_allowed = total_equity * max_pct
+    if estimated_value > max_allowed:
+        return False, (
+            f"Position value ${estimated_value:.0f} would exceed "
+            f"{max_pct*100:.0f}% of equity (${max_allowed:.0f})"
+        )
 
     return True, ""
 
