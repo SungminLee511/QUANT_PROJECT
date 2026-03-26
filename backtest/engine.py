@@ -377,26 +377,33 @@ def _compute_metrics(
         max_dd = max(max_dd, dd)
     metrics.max_drawdown_pct = round(max_dd * 100, 2)
 
-    # Trade analysis — group buy/sell pairs per symbol
+    # Trade analysis — group round-trips per symbol (long: buy→sell, short: sell→buy)
     metrics.total_trades = len(trades)
     if trades:
         wins = []
         losses = []
-        buy_prices: dict[str, list[float]] = {}
+        # Track open entries: positive qty = long entry (buys), negative = short entry (sells)
+        open_entries: dict[str, list[tuple[str, float]]] = {}  # symbol → [(side, price), ...]
 
         for t in trades:
-            if t.side == "buy":
-                buy_prices.setdefault(t.symbol, []).append(t.price)
-            elif t.side == "sell":
-                buys = buy_prices.get(t.symbol, [])
-                if buys:
-                    avg_buy = sum(buys) / len(buys)
-                    pnl_pct = (t.price / avg_buy - 1) * 100
-                    if pnl_pct >= 0:
-                        wins.append(pnl_pct)
-                    else:
-                        losses.append(pnl_pct)
-                    buy_prices[t.symbol] = []
+            entries = open_entries.get(t.symbol, [])
+            if entries and entries[0][0] != t.side:
+                # Closing trade — opposite side of open entry
+                entry_side, entry_price = entries[0]
+                if entry_side == "buy":
+                    # Long round-trip: profit when sell price > buy price
+                    pnl_pct = (t.price / entry_price - 1) * 100 if entry_price > 0 else 0
+                else:
+                    # Short round-trip: profit when buy price < sell price
+                    pnl_pct = (entry_price / t.price - 1) * 100 if t.price > 0 else 0
+                if pnl_pct >= 0:
+                    wins.append(pnl_pct)
+                else:
+                    losses.append(pnl_pct)
+                open_entries[t.symbol] = entries[1:]  # consume the entry
+            else:
+                # Opening trade — same side or no prior entries
+                open_entries.setdefault(t.symbol, []).append((t.side, t.price))
 
         metrics.winning_trades = len(wins)
         metrics.losing_trades = len(losses)

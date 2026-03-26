@@ -108,12 +108,7 @@
 
 ---
 
-## BUG-40: Backtest _compute_metrics ignores short round-trips in win/loss analysis
-
-- **Severity:** HIGH
-- **File:** `backtest/engine.py` lines 381-399
-- **Description:** Win/loss analysis assumes buy-then-sell order per symbol. Short trades (sell-first, buy-to-cover) are never matched — sells are skipped when no prior buy exists, and the covering buy gets recorded as a new "buy" with no subsequent sell. `winning_trades`, `losing_trades`, `win_rate_pct`, `avg_win_pct`, `avg_loss_pct`, `profit_factor` are all incorrect for any backtest using `long_short` mode.
-- **Fix:** Track both long round-trips (buy→sell) and short round-trips (sell→buy).
+## ~~BUG-40: Backtest _compute_metrics ignores short round-trips in win/loss analysis — FIXED~~
 
 ---
 
