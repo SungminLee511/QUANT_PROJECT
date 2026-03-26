@@ -72,15 +72,7 @@ Multiple endpoints call `DEFAULT_STRATEGY.read_text()` without existence check. 
 
 ---
 
-## BUG-29: Custom data validator missing `open` in FORBIDDEN_NAMES — MEDIUM
-
-**File:** `strategy/custom_validator.py:25-30`
-
-`validator_v2.py` blocks `open` but `custom_validator.py` does not. Custom data functions can reference `open()` to read/write files on the server.
-
-**Impact:** Custom data code can access the filesystem (read/write arbitrary files).
-
-**Fix:** Add `"open"` to FORBIDDEN_NAMES in `custom_validator.py`.
+## ~~BUG-29: Custom data validator missing `open` in FORBIDDEN_NAMES — FIXED~~
 
 ---
 

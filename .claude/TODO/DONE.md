@@ -323,3 +323,10 @@
 
 **Fix:** Changed fallback from `0.0` to keeping `np.nan` when no prior buffer value exists. Also added NaN check on buffer lookback to avoid propagating stale NaN. Strategies now see NaN instead of fake 0.0 prices for truly missing data.
 **Date:** 2026-03-26
+
+---
+
+## BUG-29: Custom data validator missing `open` in FORBIDDEN_NAMES — MEDIUM (was)
+
+**Fix:** Added `"open"` to FORBIDDEN_NAMES in `custom_validator.py`, matching the strategy validator. Prevents custom data functions from accessing the filesystem.
+**Date:** 2026-03-26

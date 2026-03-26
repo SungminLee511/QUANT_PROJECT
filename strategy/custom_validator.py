@@ -27,6 +27,7 @@ FORBIDDEN_NAMES = {
     "__import__", "compile", "globals", "locals",
     "getattr", "setattr", "delattr", "breakpoint",
     "os", "sys", "shutil", "pathlib",
+    "open",  # BUG-29 fix: block filesystem access via open()
 }
 
 
