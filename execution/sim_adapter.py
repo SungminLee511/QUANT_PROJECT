@@ -89,6 +89,11 @@ class SimulationAdapter(BaseExchangeAdapter):
 
                 if self._strategy_mode == "long_short" and pos["quantity"] < 0:
                     # Covering a short — cost comes from cash
+                    if cost > self._cash:
+                        quantity = self._cash / price
+                        if quantity <= 0:
+                            raise ValueError(f"Insufficient cash to cover short for {symbol}")
+                        cost = price * quantity
                     self._cash -= cost
                     new_qty = pos["quantity"] + quantity
                     if abs(new_qty) <= 0.0001:

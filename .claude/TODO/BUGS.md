@@ -104,12 +104,7 @@
 
 ---
 
-## BUG-39: SimulationAdapter short cover path skips cash sufficiency check
-
-- **Severity:** HIGH
-- **File:** `execution/sim_adapter.py` lines 91-92
-- **Description:** Buying to cover a short deducts `cost` from `_cash` with no check. The normal buy path (line 103) has `if cost > self._cash` guard + quantity clipping. The short-cover branch skips this, allowing `_cash` to go negative and corrupting all subsequent equity/balance calculations.
-- **Fix:** Add same cash sufficiency guard as normal buy path, or clip quantity to max affordable.
+## ~~BUG-39: SimulationAdapter short cover path skips cash sufficiency check — FIXED~~
 
 ---
 
