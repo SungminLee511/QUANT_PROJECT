@@ -1,4 +1,9 @@
-"""Alpaca exchange adapter — order placement, tracking, balance queries."""
+"""Alpaca exchange adapter — order placement, tracking, balance queries.
+
+All TradingClient calls are wrapped in asyncio.to_thread() because the
+Alpaca SDK is synchronous. Without this, every HTTP call blocks the
+entire event loop for 100-500ms (BUG-21 fix).
+"""
 
 import asyncio
 import logging
@@ -58,7 +63,7 @@ class AlpacaAdapter(BaseExchangeAdapter):
 
         for attempt in range(1, MAX_RETRIES + 1):
             try:
-                order = self._client.submit_order(req)
+                order = await asyncio.to_thread(self._client.submit_order, req)
                 external_id = str(order.id)
                 logger.info(
                     "Alpaca order placed: %s %s qty=%s -> id=%s",
@@ -82,14 +87,14 @@ class AlpacaAdapter(BaseExchangeAdapter):
 
     async def cancel_order(self, external_order_id: str) -> bool:
         try:
-            self._client.cancel_order_by_id(external_order_id)
+            await asyncio.to_thread(self._client.cancel_order_by_id, external_order_id)
             return True
         except Exception:
             logger.exception("Failed to cancel Alpaca order %s", external_order_id)
             return False
 
     async def get_order_status(self, external_order_id: str) -> OrderUpdate:
-        order = self._client.get_order_by_id(external_order_id)
+        order = await asyncio.to_thread(self._client.get_order_by_id, external_order_id)
 
         status_map = {
             "new": OrderStatus.PLACED,
@@ -114,7 +119,7 @@ class AlpacaAdapter(BaseExchangeAdapter):
         )
 
     async def get_balances(self) -> dict:
-        account = self._client.get_account()
+        account = await asyncio.to_thread(self._client.get_account)
         return {
             "USD": {
                 "free": float(account.cash),
@@ -124,7 +129,7 @@ class AlpacaAdapter(BaseExchangeAdapter):
         }
 
     async def get_positions(self) -> list:
-        positions = self._client.get_all_positions()
+        positions = await asyncio.to_thread(self._client.get_all_positions)
         return [
             {
                 "symbol": p.symbol,

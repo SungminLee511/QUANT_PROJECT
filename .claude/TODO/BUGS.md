@@ -48,15 +48,7 @@ The method only handles `name, symbols, api_key, api_secret, testnet, starting_b
 
 ---
 
-## BUG-21: Alpaca adapter blocks event loop with synchronous HTTP calls — HIGH
-
-**File:** `execution/alpaca_adapter.py:61,83,92,117,127`
-
-The Alpaca `TradingClient` is synchronous. Calls like `submit_order()`, `cancel_order_by_id()`, `get_order_by_id()` block the entire asyncio event loop for 100-500ms each. During this time, all other coroutines are stalled (Redis messages, price updates, other sessions).
-
-**Impact:** Cascading latency across all sessions. Missed messages, delayed order execution.
-
-**Fix:** Wrap all sync `self._client.*` calls in `await asyncio.to_thread(...)`.
+## ~~BUG-21: Alpaca adapter blocks event loop with synchronous HTTP calls — FIXED~~
 
 ---
 

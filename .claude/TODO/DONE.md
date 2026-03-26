@@ -267,3 +267,10 @@
 
 **Fix:** Added `_order_symbols` dict to `BinanceAdapter`, populated during `place_order`. `cancel_order` now looks up the symbol and passes it to the Binance API. Returns False with error log if symbol is unknown.
 **Date:** 2026-03-26
+
+---
+
+## BUG-21: Alpaca adapter blocks event loop with synchronous HTTP calls — HIGH (was)
+
+**Fix:** Wrapped all 5 sync `TradingClient` calls in `await asyncio.to_thread()`: `submit_order`, `cancel_order_by_id`, `get_order_by_id`, `get_account`, `get_all_positions`. Event loop no longer blocks during Alpaca HTTP requests.
+**Date:** 2026-03-26
