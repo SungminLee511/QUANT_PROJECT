@@ -53,10 +53,12 @@ class TestPositionSize:
         assert approved is False
         assert "exceed" in reason.lower()
 
-    def test_no_equity_allows_through(self, buy_signal, risk_config):
+    def test_no_equity_rejects(self, buy_signal, risk_config):
+        """BUG-30: zero equity should reject, not blindly allow."""
         state = {"total_equity": 0, "prices": {}}
-        approved, _ = check_position_size(buy_signal, state, risk_config)
-        assert approved is True
+        approved, reason = check_position_size(buy_signal, state, risk_config)
+        assert approved is False
+        assert "unavailable" in reason
 
 
 class TestMaxPositions:

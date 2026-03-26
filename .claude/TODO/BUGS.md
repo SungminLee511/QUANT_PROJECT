@@ -76,15 +76,7 @@ Multiple endpoints call `DEFAULT_STRATEGY.read_text()` without existence check. 
 
 ---
 
-## BUG-30: `check_position_size` approves on zero/negative equity — MEDIUM
-
-**File:** `risk/limits.py:27-28`
-
-When `total_equity <= 0` or `current_price <= 0`, returns `(True, "")` — allows the trade. This bypasses position size limits when portfolio state is unavailable or corrupted.
-
-**Impact:** Position size limits ineffective when state is missing. (V1 legacy — only affects live sessions using V1 risk checks.)
-
-**Fix:** Return `(False, "Cannot evaluate: equity or price unavailable")` instead.
+## ~~BUG-30: `check_position_size` approves on zero/negative equity — FIXED~~
 
 ---
 

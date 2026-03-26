@@ -330,3 +330,10 @@
 
 **Fix:** Added `"open"` to FORBIDDEN_NAMES in `custom_validator.py`, matching the strategy validator. Prevents custom data functions from accessing the filesystem.
 **Date:** 2026-03-26
+
+---
+
+## BUG-30: `check_position_size` approves on zero/negative equity — MEDIUM (was)
+
+**Fix:** Changed `check_position_size` to return `(False, "Cannot evaluate...")` when `total_equity <= 0` or `current_price <= 0`, instead of blindly approving. Updated test to match new rejection behavior.
+**Date:** 2026-03-26

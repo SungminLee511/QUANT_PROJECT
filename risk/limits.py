@@ -25,7 +25,8 @@ def check_position_size(
     current_price = portfolio_state.get("prices", {}).get(signal.symbol, 0)
 
     if total_equity <= 0 or current_price <= 0:
-        return True, ""  # Can't evaluate — allow (will be caught by exchange)
+        # BUG-30 fix: reject when equity/price unavailable instead of blindly allowing
+        return False, "Cannot evaluate position size: equity or price unavailable"
 
     # Estimate position value from signal strength and current price
     # strength is 0.0–1.0 sizing hint; multiply by equity for estimated position value
