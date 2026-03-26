@@ -107,6 +107,7 @@ class SessionManager:
         api_secret: str = "",
         testnet: bool = True,
         starting_budget: float = 10000.0,
+        universe_preset: str = "",
     ) -> str:
         """Create a new session in the DB and return its ID."""
         is_sim = session_type.is_simulation
@@ -116,6 +117,8 @@ class SessionManager:
             "api_secret": api_secret,
             "testnet": testnet,
         }
+        if universe_preset:
+            config_data["universe_preset"] = universe_preset
 
         # Default strategy code
         default_code = ""
@@ -880,6 +883,7 @@ class SessionManager:
             "status": ts.status,
             "starting_budget": ts.starting_budget,
             "symbols": config_data.get("symbols", []),
+            "universe_preset": config_data.get("universe_preset", ""),
             "strategy_class": ts.strategy_class,
             "strategy_code": ts.strategy_code or "",
             "data_config": data_config,

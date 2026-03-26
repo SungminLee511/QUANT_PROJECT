@@ -33,7 +33,11 @@
         .session-item:hover { background: #1c2129; }
         .session-item.active { background: #1c2129; border-left-color: #58a6ff; }
         .session-item .s-name { font-size: 13px; font-weight: 600; margin-bottom: 2px; display: flex; justify-content: space-between; align-items: center; }
-        .session-item .s-meta { font-size: 11px; color: #8b949e; display: flex; gap: 8px; align-items: center; }
+        .session-item .s-meta { font-size: 11px; color: #8b949e; display: flex; gap: 8px; align-items: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .session-item .s-tickers-toggle { font-size: 10px; color: #58a6ff; cursor: pointer; padding: 1px 0; user-select: none; }
+        .session-item .s-tickers-toggle:hover { color: #79c0ff; }
+        .session-item .s-tickers-list { font-size: 10px; color: #8b949e; display: none; padding: 2px 0 0 12px; word-break: break-all; line-height: 1.4; }
+        .session-item .s-tickers-list.open { display: block; }
         .session-item .s-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
         .session-item .s-dot.running { background: #3fb950; }
         .session-item .s-dot.stopped { background: #484f58; }
@@ -153,8 +157,12 @@
                         <div class="s-meta">
                             <span class="s-dot {% if s.is_running %}running{% elif s.status == 'error' %}error{% else %}stopped{% endif %}"></span>
                             {{ s.status | capitalize }}
-                            &middot; {{ s.symbols | join(', ') if s.symbols else 'No symbols' }}
+                            &middot; {{ s.universe_preset if s.universe_preset else (s.symbols | join(', ') if s.symbols else 'No symbols') }}
                         </div>
+                        {% if s.universe_preset and s.symbols %}
+                        <div class="s-tickers-toggle" onclick="event.stopPropagation(); this.nextElementSibling.classList.toggle('open'); this.textContent = this.nextElementSibling.classList.contains('open') ? '▾ Hide tickers' : '▸ Show tickers';">▸ Show tickers</div>
+                        <div class="s-tickers-list">{{ s.symbols | join(', ') }}</div>
+                        {% endif %}
                     </div>
                     <div class="session-controls" id="controls-{{ s.id }}">
                         {% if s.is_running %}
@@ -213,10 +221,16 @@
                 </select>
                 <div class="hint">Pick a preset or choose "Custom" to type your own tickers.</div>
             </div>
-            <div class="field">
+            <div class="field" id="symbolsFieldCustom">
                 <label>Symbols (comma-separated)</label>
                 <input type="text" id="newSymbols" placeholder="BTCUSDT, ETHUSDT" value="BTCUSDT">
                 <div class="hint">Edit freely — the universe dropdown just pre-fills this field.</div>
+            </div>
+            <div class="field" id="symbolsFieldPreset" style="display:none;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span id="presetTickerToggle" style="font-size:12px;color:#58a6ff;cursor:pointer;user-select:none;" onclick="togglePresetTickers()">▸ Show tickers</span>
+                </div>
+                <div id="presetTickerList" style="font-size:11px;color:#8b949e;padding:4px 0 0 4px;word-break:break-all;line-height:1.5;display:none;"></div>
             </div>
             <div class="field">
                 <label>Starting Budget ($)</label>
@@ -300,14 +314,41 @@
                 symInput.placeholder = 'BTCUSDT, ETHUSDT';
                 symInput.value = 'BTCUSDT';
             }
+            // Reset to custom symbols view
+            document.getElementById('symbolsFieldCustom').style.display = 'block';
+            document.getElementById('symbolsFieldPreset').style.display = 'none';
         });
 
-        // Universe preset fills the symbols input
+        // Universe preset fills the symbols input + toggle ticker preview
         function onUniverseChange() {
-            const val = document.getElementById('newUniverse').value;
+            const sel = document.getElementById('newUniverse');
+            const val = sel.value;
+            const customField = document.getElementById('symbolsFieldCustom');
+            const presetField = document.getElementById('symbolsFieldPreset');
+            const tickerList = document.getElementById('presetTickerList');
+            const tickerToggle = document.getElementById('presetTickerToggle');
+
             if (val) {
                 document.getElementById('newSymbols').value = val;
+                // Show preset ticker toggle, hide raw input
+                customField.style.display = 'none';
+                presetField.style.display = 'block';
+                tickerList.textContent = val.split(',').join(', ');
+                tickerList.style.display = 'none';
+                tickerToggle.textContent = '\u25b8 Show tickers';
+            } else {
+                // Custom mode — show editable input
+                customField.style.display = 'block';
+                presetField.style.display = 'none';
             }
+        }
+
+        function togglePresetTickers() {
+            const list = document.getElementById('presetTickerList');
+            const toggle = document.getElementById('presetTickerToggle');
+            const isOpen = list.style.display !== 'none';
+            list.style.display = isOpen ? 'none' : 'block';
+            toggle.textContent = isOpen ? '\u25b8 Show tickers' : '\u25be Hide tickers';
         }
 
         // ── Session CRUD ────────────────────────────────────
@@ -318,6 +359,10 @@
             const budget = parseFloat(document.getElementById('newBudget').value) || 10000;
             const apiKey = document.getElementById('newApiKey').value.trim();
             const apiSecret = document.getElementById('newApiSecret').value.trim();
+
+            // Get universe preset label (if a preset was selected)
+            const uniSelect = document.getElementById('newUniverse');
+            const universePreset = uniSelect.value ? uniSelect.options[uniSelect.selectedIndex].text : '';
 
             if (!name) { showToast('Please enter a session name', false); return; }
             if (!symbolsStr) { showToast('Please enter at least one symbol', false); return; }
@@ -332,6 +377,7 @@
                         name, session_type: sessionType, symbols,
                         starting_budget: budget,
                         api_key: apiKey, api_secret: apiSecret,
+                        universe_preset: universePreset,
                     })
                 });
                 const data = await res.json();

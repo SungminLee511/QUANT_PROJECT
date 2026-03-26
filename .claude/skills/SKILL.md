@@ -222,8 +222,11 @@ All pages (except login) share a common layout:
 
 ### Session Management UI
 
-- **Create Session Modal** — name, type (4 options), symbols, starting budget, API keys (for live only)
-- **Sidebar** — real-time session status, click to scope all data views
+- **Create Session Modal** — name, type (4 options), universe preset or custom symbols, starting budget, API keys (for live only)
+  - Universe presets: when selected, raw symbols input is hidden; collapsible "Show tickers" toggle reveals the list
+  - Custom mode: editable text input for comma-separated symbols
+  - Preset label (e.g., "Mag 7") is stored in `config_json.universe_preset` and shown in sidebar instead of full ticker list
+- **Sidebar** — real-time session status, preset name or symbols, collapsible ticker list for presets
 - **Start/Stop/Delete** — inline controls per session
 - **Session-scoped views** — Dashboard, Editor all filter by selected session (via `?session_id=` query param)
 - **Global view** — "All Sessions" shows aggregated data across all sessions

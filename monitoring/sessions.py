@@ -42,6 +42,7 @@ def create_sessions_router(session_manager: SessionManager) -> APIRouter:
                 api_secret=body.get("api_secret", ""),
                 testnet=body.get("testnet", True),
                 starting_budget=float(body.get("starting_budget", 10000.0)),
+                universe_preset=body.get("universe_preset", ""),
             )
             return JSONResponse({"id": session_id, "created": True})
         except Exception as e:
