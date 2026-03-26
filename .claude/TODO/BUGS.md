@@ -16,15 +16,7 @@
 
 ---
 
-## BUG-17: `_persist_order` queries by `external_id=None` for failed orders — HIGH
-
-**File:** `execution/router.py:244-246`
-
-When an order fails during `place_order()`, `external_id` is still `None`. The persist query `WHERE external_id == None` generates `IS NULL` in SQL, potentially matching ALL previously failed orders with NULL external_id, overwriting their records.
-
-**Impact:** Could corrupt other failed orders' DB records. Or create duplicates depending on race timing.
-
-**Fix:** When `external_id is None`, skip the SELECT and always INSERT using `order.order_id` as the key.
+## ~~BUG-17: `_persist_order` queries by `external_id=None` for failed orders — FIXED~~
 
 ---
 
@@ -124,15 +116,7 @@ When a symbol has no data for a given date and no prior buffer value, `0.0` is u
 
 ---
 
-## BUG-26: `avg_price` never persisted to DB on order updates — MEDIUM
-
-**File:** `execution/router.py:250-253`
-
-When updating an existing order record, only `status`, `filled_quantity`, and `updated_at` are set. `avg_price` is never written. New inserts also omit it.
-
-**Impact:** Order history in DB always shows 0/NULL for fill price. Dashboard/audit trail missing critical info.
-
-**Fix:** Add `existing.avg_price = order.avg_price` in update branch, and `avg_price=order.avg_price` in insert.
+## ~~BUG-26: `avg_price` never persisted to DB on order updates — FIXED (with BUG-17)~~
 
 ---
 

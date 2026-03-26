@@ -121,6 +121,7 @@ class Order(Base):
     side: Mapped[str] = mapped_column(String(10), nullable=False)
     quantity: Mapped[float] = mapped_column(Float, nullable=False)
     filled_quantity: Mapped[float] = mapped_column(Float, default=0.0)
+    avg_price: Mapped[float] = mapped_column(Float, default=0.0, nullable=True)
     order_type: Mapped[str] = mapped_column(String(10), nullable=False, default="market")
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     exchange: Mapped[str] = mapped_column(String(20), nullable=False)

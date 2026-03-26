@@ -246,3 +246,17 @@
 
 **Fix:** Added `_last_filled` dict tracking cumulative `filled_qty` per `order_id`. `_on_order_update` now computes `delta_qty = filled_qty - prev_filled` and only applies the incremental fill. Cleaned up on FILLED status. Prevents position quantity drift on partial fills from Binance/Alpaca.
 **Date:** 2026-03-26
+
+---
+
+## BUG-17: `_persist_order` queries by `external_id=None` for failed orders — HIGH (was)
+
+**Fix:** Rewrote `_persist_order` in `execution/router.py` to use `order_id` (internal UUID) as primary lookup key instead of `external_id`. Fallback to `external_id` lookup for backward compat. Failed orders now always INSERT with `order_id`, never match other NULL rows.
+**Date:** 2026-03-26
+
+---
+
+## BUG-26: `avg_price` never persisted to DB on order updates — MEDIUM (was)
+
+**Fix:** Added `avg_price` column to `Order` model in `db/models.py`. `_persist_order` now writes `avg_price` in both update and insert branches. Fixed alongside BUG-17.
+**Date:** 2026-03-26

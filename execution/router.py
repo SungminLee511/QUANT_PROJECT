@@ -237,28 +237,50 @@ class OrderRouter:
                     logger.exception("Error polling order %s", order_id)
 
     async def _persist_order(self, order: OrderState) -> None:
-        """Persist order state to the database."""
+        """Persist order state to the database.
+
+        Uses order_id (internal UUID) as the primary lookup key to avoid
+        matching multiple NULL external_id rows for failed orders (BUG-17).
+        Falls back to external_id lookup for backward compatibility with
+        orders persisted before this fix.
+        """
         try:
             async with get_session() as session:
-                from sqlalchemy import select
+                from sqlalchemy import select, or_
+                existing = None
+
+                # Primary lookup: by internal order_id
                 stmt = select(OrderModel).where(
-                    OrderModel.external_id == order.external_id
+                    OrderModel.external_id == order.order_id
                 )
                 result = await session.execute(stmt)
                 existing = result.scalar_one_or_none()
 
+                # Fallback: by exchange external_id (for orders created by adapters)
+                if existing is None and order.external_id is not None:
+                    stmt = select(OrderModel).where(
+                        OrderModel.external_id == order.external_id
+                    )
+                    result = await session.execute(stmt)
+                    existing = result.scalar_one_or_none()
+
                 if existing:
                     existing.status = order.status.value
                     existing.filled_quantity = order.filled_quantity
+                    existing.avg_price = order.avg_price
                     existing.updated_at = order.updated_at
+                    # Update external_id if we now have one
+                    if order.external_id and existing.external_id == order.order_id:
+                        existing.external_id = order.external_id
                 else:
                     db_order = OrderModel(
                         session_id=self._session_id,
-                        external_id=order.external_id or order.order_id,
+                        external_id=order.order_id,
                         symbol=order.symbol,
                         side=order.side.value,
                         quantity=order.quantity,
                         filled_quantity=order.filled_quantity,
+                        avg_price=order.avg_price,
                         order_type=order.order_type.value,
                         status=order.status.value,
                         exchange=order.exchange.value,
