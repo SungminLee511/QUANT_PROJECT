@@ -109,34 +109,85 @@ class PortfolioTracker:
             })
 
             if update.side == Side.BUY:
-                # Update average entry price
-                old_value = pos["quantity"] * pos["avg_entry_price"]
-                new_value = delta_qty * update.avg_price
-                new_qty = pos["quantity"] + delta_qty
-                pos["avg_entry_price"] = (old_value + new_value) / new_qty if new_qty > 0 else 0
-                pos["quantity"] = new_qty
+                current_qty = pos["quantity"]
                 self._cash -= delta_qty * update.avg_price
-            elif update.side == Side.SELL:
-                # Record realized P&L before modifying position (BUG-27)
-                entry_price = pos["avg_entry_price"]
-                if entry_price > 0 and delta_qty > 0:
-                    pnl = self._pnl.record_close(
-                        symbol=symbol,
-                        quantity=delta_qty,
-                        entry_price=entry_price,
-                        exit_price=update.avg_price,
-                        side="sell",
-                    )
-                    logger.info(
-                        "Realized P&L: %s qty=%.4f entry=%.2f exit=%.2f pnl=%.2f (session=%s)",
-                        symbol, delta_qty, entry_price, update.avg_price, pnl, self._session_id,
-                    )
 
-                pos["quantity"] -= delta_qty
+                if current_qty < -0.0001:
+                    # We have a short position — buy covers some/all of it
+                    cover_qty = min(delta_qty, abs(current_qty))
+                    entry_price = pos["avg_entry_price"]
+                    if entry_price > 0 and cover_qty > 0:
+                        # Short P&L: profit when exit < entry
+                        pnl = self._pnl.record_close(
+                            symbol=symbol,
+                            quantity=cover_qty,
+                            entry_price=entry_price,
+                            exit_price=update.avg_price,
+                            side="buy",  # covering a short
+                        )
+                        logger.info(
+                            "Realized P&L (short cover): %s qty=%.4f entry=%.2f exit=%.2f pnl=%.2f (session=%s)",
+                            symbol, cover_qty, entry_price, update.avg_price, pnl, self._session_id,
+                        )
+                    remainder = delta_qty - cover_qty
+                    if remainder > 0.0001:
+                        # Flipped from short to long — new long at fill price
+                        pos["quantity"] = remainder
+                        pos["avg_entry_price"] = update.avg_price
+                    else:
+                        # Partially or fully covered the short
+                        pos["quantity"] = current_qty + delta_qty
+                        if abs(pos["quantity"]) <= 0.0001:
+                            pos["quantity"] = 0.0
+                            pos["avg_entry_price"] = 0.0
+                        # avg_entry_price stays for remaining short
+                else:
+                    # No short — accumulate long position
+                    old_value = current_qty * pos["avg_entry_price"]
+                    new_value = delta_qty * update.avg_price
+                    new_qty = current_qty + delta_qty
+                    pos["avg_entry_price"] = (old_value + new_value) / new_qty if new_qty > 0 else 0
+                    pos["quantity"] = new_qty
+
+            elif update.side == Side.SELL:
+                current_qty = pos["quantity"]
                 self._cash += delta_qty * update.avg_price
-                if abs(pos["quantity"]) <= 0.0001:  # Effectively closed
-                    pos["quantity"] = 0.0
-                    pos["avg_entry_price"] = 0.0
+
+                if current_qty > 0.0001:
+                    # We have a long position — sell closes some/all of it
+                    close_qty = min(delta_qty, current_qty)
+                    entry_price = pos["avg_entry_price"]
+                    if entry_price > 0 and close_qty > 0:
+                        pnl = self._pnl.record_close(
+                            symbol=symbol,
+                            quantity=close_qty,
+                            entry_price=entry_price,
+                            exit_price=update.avg_price,
+                            side="sell",
+                        )
+                        logger.info(
+                            "Realized P&L: %s qty=%.4f entry=%.2f exit=%.2f pnl=%.2f (session=%s)",
+                            symbol, close_qty, entry_price, update.avg_price, pnl, self._session_id,
+                        )
+                    remainder = delta_qty - close_qty
+                    if remainder > 0.0001:
+                        # Flipped from long to short — new short at fill price
+                        pos["quantity"] = -(remainder)
+                        pos["avg_entry_price"] = update.avg_price
+                    else:
+                        # Partially or fully closed the long
+                        pos["quantity"] = current_qty - delta_qty
+                        if abs(pos["quantity"]) <= 0.0001:
+                            pos["quantity"] = 0.0
+                            pos["avg_entry_price"] = 0.0
+                        # avg_entry_price stays for remaining long
+                else:
+                    # No long — accumulate short position (open or increase short)
+                    old_value = abs(current_qty) * pos["avg_entry_price"]
+                    new_value = delta_qty * update.avg_price
+                    new_qty = abs(current_qty) + delta_qty
+                    pos["avg_entry_price"] = (old_value + new_value) / new_qty if new_qty > 0 else 0
+                    pos["quantity"] = current_qty - delta_qty  # goes more negative
 
             self._positions[symbol] = pos
             self._prices[symbol] = update.avg_price

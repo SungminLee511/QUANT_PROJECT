@@ -96,14 +96,7 @@
 
 ---
 
-## BUG-37: PortfolioTracker corrupts P&L and avg_entry_price on short trades
-
-- **Severity:** HIGH
-- **File:** `portfolio/tracker.py` lines 111-133
-- **Description:** Two sub-issues:
-  1. **SELL opening a short:** Records realized P&L on the *entire* sell qty including the portion that opens a new short (not closing a long). Inflates/deflates realized P&L.
-  2. **BUY covering a short:** Uses the long-accumulation weighted-average formula (`(old_value + new_value) / new_qty`), producing nonsensical `avg_entry_price` when old qty is negative. Also records zero realized P&L for the short cover.
-- **Fix:** Split logic: close the existing side first (record P&L on closed portion), then open the new side with remainder at the new price.
+## ~~BUG-37: PortfolioTracker corrupts P&L and avg_entry_price on short trades — FIXED~~
 
 ---
 
