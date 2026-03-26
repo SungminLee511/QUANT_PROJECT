@@ -52,6 +52,7 @@ def create_session(response: Response, username: str, ttl_hours: int = 24) -> st
         key=SESSION_COOKIE,
         value=token,
         httponly=True,
+        secure=True,
         samesite="lax",
         max_age=ttl_hours * 3600,
     )

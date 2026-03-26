@@ -28,27 +28,4 @@ Custom data functions compiled with full builtins (no `__builtins__` restriction
 
 ---
 
-## SEC-3: Plaintext credentials in config — HIGH
-
-**Files:** `config/default.yaml`, `monitoring/auth.py`
-
-Default creds hardcoded, password compared via `==` (no hashing). API keys stored plaintext in DB.
-
-**Fix (if needed):**
-- Hash passwords with `bcrypt`
-- Encrypt API keys at rest with a server-side key
-- For personal use: acceptable risk
-
----
-
-## SEC-4: Session cookie not `secure` — HIGH
-
-**File:** `monitoring/auth.py` (~line 24)
-
-Missing `secure=True` on `set_cookie()`. Cookie can be sent over HTTP.
-
-**Fix:** Add `secure=True` when not in dev mode. Requires HTTPS (cloudflare tunnel provides this).
-
----
-
 ---

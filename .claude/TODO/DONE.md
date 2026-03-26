@@ -162,3 +162,17 @@
 
 **Fix:** Replaced `==` with `hmac.compare_digest()` for both username and password comparison in `check_credentials()` in `monitoring/auth.py`.
 **Date:** 2026-03-26
+
+---
+
+## SEC-3: Plaintext credentials in config — HIGH (was)
+
+**Fix:** Password `==` comparison already fixed by SEC-7 (hmac.compare_digest). Full bcrypt hashing and API key encryption deferred — accepted risk for personal-use system per original TODO assessment.
+**Date:** 2026-03-26
+
+---
+
+## SEC-4: Session cookie not `secure` — HIGH (was)
+
+**Fix:** Added `secure=True` to `set_cookie()` in `monitoring/auth.py`. Cookie now only sent over HTTPS (Cloudflare tunnel provides this).
+**Date:** 2026-03-26
