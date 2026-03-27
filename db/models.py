@@ -117,7 +117,8 @@ class Order(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[str] = mapped_column(String(36), ForeignKey("trading_sessions.id"), nullable=False, index=True)
-    external_id: Mapped[str] = mapped_column(String(128), nullable=True)
+    order_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, comment="Internal UUID")
+    external_id: Mapped[str | None] = mapped_column(String(128), nullable=True, comment="Exchange order ID")
     symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     side: Mapped[str] = mapped_column(String(10), nullable=False)
     quantity: Mapped[float] = mapped_column(Float, nullable=False)

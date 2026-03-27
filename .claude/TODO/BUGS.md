@@ -162,14 +162,9 @@ If `_order_symbols` map loses the symbol (adapter restart), `cancel_order()` ret
 
 ---
 
-### BUG-58: Router `_persist_order` misuses `external_id` for failed orders
+### ~~BUG-58: Router `_persist_order` misuses `external_id` for failed orders~~ ✅ FIXED
 
-**File:** `execution/router.py` — Lines 276–289
-**Severity:** HIGH
-
-Failed orders are persisted with `external_id=order.order_id` (internal UUID). Column is semantically overloaded — breaks downstream lookups expecting exchange ID.
-
-**Fix:** Set `external_id=None` for failed orders, store internal ID in `metadata`.
+**Fixed in:** commit (BUG-58). Added dedicated `order_id` column to Order model + Alembic migration 002. Router now uses `order_id` for lookup and stores `external_id=None` until exchange confirms. Failed orders no longer pollute `external_id`.
 
 ---
 
