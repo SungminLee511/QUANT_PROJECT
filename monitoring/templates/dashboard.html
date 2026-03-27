@@ -66,8 +66,8 @@ th { color: #8b949e; font-weight: 600; }
     <div class="card">
         <h2>Positions</h2>
         <table>
-            <thead><tr><th>Symbol</th><th>Qty</th><th>Entry</th><th>Current</th><th>P&amp;L</th></tr></thead>
-            <tbody id="positionsTable"><tr><td colspan="5" style="color:#484f58">No positions</td></tr></tbody>
+            <thead><tr><th>Symbol</th><th>Qty</th><th>Entry</th><th>Current</th><th>Equity</th><th>P&amp;L</th></tr></thead>
+            <tbody id="positionsTable"><tr><td colspan="6" style="color:#484f58">No positions</td></tr></tbody>
         </table>
     </div>
 
@@ -91,11 +91,14 @@ th { color: #8b949e; font-weight: 600; }
         equityChart = new Chart(ctx, {
             type: 'line',
             data: { labels: [], datasets: [{ label: 'Equity', data: [], borderColor: '#58a6ff', backgroundColor: 'rgba(88,166,255,0.08)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2 }] },
-            options: { responsive: true, scales: { x: { ticks: { color: '#484f58', maxTicksLimit: 10 }, grid: { color: '#21262d' } }, y: { ticks: { color: '#484f58' }, grid: { color: '#21262d' } } }, plugins: { legend: { display: false } } }
+            options: { responsive: true, scales: { x: { ticks: { color: '#484f58', maxTicksLimit: 10 }, grid: { color: '#21262d' } }, y: { ticks: { color: '#484f58', callback: v => '$' + fmt(v) }, grid: { color: '#21262d' } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => '$' + fmt(ctx.parsed.y) } } } }
         });
     }
 
+    function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
     function fmt(n) { return (n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+    function fmtQty(n) { const v = Math.abs(n||0); return v < 1 ? v.toPrecision(4) : v.toFixed(2); }
+    function fmtPrice(n) { return (n||0).toFixed(2); }
 
     function updateBanner() {
         const banner = document.getElementById('sessionBanner');
@@ -141,19 +144,23 @@ th { color: #8b949e; font-weight: 600; }
             const pt = document.getElementById('positionsTable');
             const positions = pos.positions || [];
             if (positions.length === 0) {
-                pt.innerHTML = '<tr><td colspan="5" style="color:#484f58">No positions</td></tr>';
+                pt.innerHTML = '<tr><td colspan="6" style="color:#484f58">No positions</td></tr>';
             } else {
                 pt.innerHTML = positions.map(p => {
                     const pnlVal = p.unrealized_pnl || 0;
                     const cls = pnlVal > 0 ? 'positive' : pnlVal < 0 ? 'negative' : '';
-                    return `<tr><td>${p.symbol}</td><td>${p.quantity || ''}</td><td>${p.entry_price ? '$'+fmt(p.entry_price) : ''}</td><td>${p.current_price ? '$'+fmt(p.current_price) : ''}</td><td class="${cls}">${pnlVal >= 0 ? '+' : ''}$${fmt(pnlVal)}</td></tr>`;
+                    const entry = p.avg_entry_price || p.entry_price || 0;
+                    const cur = p.current_price || 0;
+                    const qty = p.quantity || 0;
+                    const equity = qty * cur;
+                    return `<tr><td>${esc(p.symbol)}</td><td>${fmtQty(qty)}</td><td>${entry ? '$'+fmtPrice(entry) : ''}</td><td>${cur ? '$'+fmtPrice(cur) : ''}</td><td>$${fmt(equity)}</td><td class="${cls}">${pnlVal >= 0 ? '+' : ''}$${fmt(pnlVal)}</td></tr>`;
                 }).join('');
             }
 
             // Orders table
             const ot = document.getElementById('ordersTable'), orderRows = (orders.orders||[]).slice(0,20);
             ot.innerHTML = orderRows.length === 0 ? '<tr><td colspan="5" style="color:#484f58">No orders</td></tr>' :
-                orderRows.map(o => { const sc = o.status==='filled'?'filled':o.status==='placed'?'placed':o.status==='pending'?'pending':'failed'; return `<tr><td>${o.symbol}</td><td>${o.side}</td><td>${o.quantity}</td><td><span class="dot ${sc}"></span>${o.status}</td><td>${o.created_at?new Date(o.created_at).toLocaleTimeString():''}</td></tr>`; }).join('');
+                orderRows.map(o => { const sc = o.status==='filled'?'filled':o.status==='placed'?'placed':o.status==='pending'?'pending':'failed'; return `<tr><td>${esc(o.symbol)}</td><td>${esc(o.side)}</td><td>${fmtQty(o.quantity)}</td><td><span class="dot ${sc}"></span>${esc(o.status)}</td><td>${o.created_at?new Date(o.created_at).toLocaleTimeString():''}</td></tr>`; }).join('');
         } catch(e) { console.error('Fetch error:', e); }
     }
 

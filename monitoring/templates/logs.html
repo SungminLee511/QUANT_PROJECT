@@ -84,12 +84,12 @@
 
     function createEntryEl(entry) {
         const div = document.createElement('div');
-        const evtType = entry.event_type || 'info';
+        const evtType = (entry.event_type || 'info').replace(/[^a-z0-9_-]/gi, '');
         div.className = 'log-entry ' + evtType;
         div.innerHTML =
             `<span class="ts">${fmtTime(entry.timestamp)}</span>` +
-            `<span class="src ${entry.source || ''}">${(entry.source || '???').toUpperCase().padEnd(9)}</span>` +
-            `<span class="sym">${entry.symbol || ''}</span>` +
+            `<span class="src ${escHtml(entry.source || '')}">${escHtml((entry.source || '???').toUpperCase().padEnd(9))}</span>` +
+            `<span class="sym">${escHtml(entry.symbol || '')}</span>` +
             `<span class="msg">${escHtml(entry.message || '')}</span>`;
         return div;
     }
@@ -160,13 +160,24 @@
         const q = currentSessionId ? `?session_id=${currentSessionId}` : '';
         evtSource = new EventSource('/logs/api/stream' + q);
 
+        let disconnectTimer = null;
         evtSource.onopen = () => {
+            if (disconnectTimer) { clearTimeout(disconnectTimer); disconnectTimer = null; }
             statusEl.textContent = 'Connected';
             statusEl.className = 'status connected';
         };
         evtSource.onerror = () => {
-            statusEl.textContent = 'Disconnected';
-            statusEl.className = 'status disconnected';
+            // EventSource auto-reconnects; only show Disconnected if it
+            // stays down for > 5 seconds (avoids flicker on transient hiccups)
+            if (!disconnectTimer) {
+                statusEl.textContent = 'Reconnecting…';
+                statusEl.className = 'status disconnected';
+                disconnectTimer = setTimeout(() => {
+                    if (evtSource.readyState === EventSource.CLOSED) {
+                        statusEl.textContent = 'Disconnected';
+                    }
+                }, 5000);
+            }
         };
         evtSource.onmessage = (e) => {
             try {
