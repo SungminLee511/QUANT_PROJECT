@@ -91,7 +91,7 @@ class SimulationAdapter(BaseExchangeAdapter):
                     # Covering a short — cost comes from cash
                     if cost > self._cash:
                         quantity = self._cash / price
-                        if quantity <= 0:
+                        if quantity < 0.0001:
                             raise ValueError(f"Insufficient cash to cover short for {symbol}")
                         cost = price * quantity
                     self._cash -= cost
@@ -107,7 +107,7 @@ class SimulationAdapter(BaseExchangeAdapter):
                     # Normal buy (long position)
                     if cost > self._cash:
                         quantity = self._cash / price
-                        if quantity <= 0:
+                        if quantity < 0.0001:
                             raise ValueError(f"Insufficient cash for {symbol}")
                         cost = price * quantity
 
