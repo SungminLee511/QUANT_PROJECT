@@ -354,12 +354,9 @@ If `max(price, 0.01)` is 0.01 (micro price), quantity explodes. If `total_equity
 
 ---
 
-### BUG-77: Missing portfolio state not detected
+### ~~BUG-77: Missing portfolio state not detected~~ ✅ FIXED
 
-**File:** `risk/manager.py` — Lines 191–212
-**Severity:** MEDIUM
-
-If Redis key missing, `get_flag()` returns None → `if state:` fails → `_portfolio_state` unchanged. Risk checks run on stale cached state with no warning.
+**Fixed in:** commit (BUG-77). Explicitly checks for `None` return from Redis and logs a one-time warning. Warning clears when state arrives, re-fires if it disappears again.
 
 ---
 

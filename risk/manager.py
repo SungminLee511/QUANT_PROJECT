@@ -196,6 +196,16 @@ class RiskManager:
                 "portfolio_state_key", "portfolio:state"
             )
             state = await self._redis.get_flag(state_key)
+            if state is None:
+                if not getattr(self, "_warned_no_state", False):
+                    logger.warning(
+                        "Portfolio state key '%s' not found in Redis (session=%s) "
+                        "— risk checks using cached/default state",
+                        state_key, self._session_id,
+                    )
+                    self._warned_no_state = True
+                return
+            self._warned_no_state = False
             if state:
                 self._portfolio_state.update(state)
                 # Convert position_symbols back to a set (Redis returns lists)
