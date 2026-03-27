@@ -57,6 +57,24 @@ class DataResolution(str, Enum):
         }[self.value]
 
 
+# BUG-75: Exchange-aware quantity precision
+# Binance: most pairs support 6-8 decimals; 6 is safe for all common pairs.
+# Alpaca: fractional shares supported to 0.01 for most; whole shares for some.
+_QUANTITY_DECIMALS = {
+    Exchange.BINANCE: 6,
+    Exchange.ALPACA: 2,
+}
+
+
+def round_quantity(quantity: float, exchange: "Exchange") -> float:
+    """Round order quantity to exchange-appropriate precision.
+
+    Prevents exchange rejections from overly precise fractional quantities.
+    """
+    decimals = _QUANTITY_DECIMALS.get(exchange, 6)
+    return round(quantity, decimals)
+
+
 class SessionType(str, Enum):
     BINANCE = "binance"
     ALPACA = "alpaca"

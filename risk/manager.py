@@ -3,7 +3,7 @@
 import asyncio
 import logging
 
-from shared.enums import Exchange, OrderType, Side
+from shared.enums import Exchange, OrderType, Side, round_quantity
 from shared.redis_client import RedisClient
 from shared.schemas import AlertMessage, LogEntry, OrderRequest, RiskCheckResult, TradeSignal
 from risk.kill_switch import KillSwitch
@@ -184,7 +184,7 @@ class RiskManager:
         return OrderRequest(
             symbol=signal.symbol,
             side=side,
-            quantity=round(quantity, 8),
+            quantity=round_quantity(quantity, exchange),
             order_type=OrderType.MARKET,
             exchange=exchange,
             strategy_id=signal.strategy_id,

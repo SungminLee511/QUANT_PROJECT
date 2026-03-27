@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 import numpy as np
 
-from shared.enums import Exchange, OrderType, Side
+from shared.enums import Exchange, OrderType, Side, round_quantity
 from shared.schemas import OrderRequest
 
 logger = logging.getLogger(__name__)
@@ -101,7 +101,7 @@ class WeightRebalancer:
             order = OrderRequest(
                 symbol=symbol,
                 side=side,
-                quantity=qty,
+                quantity=round_quantity(qty, self.exchange),
                 order_type=OrderType.MARKET,
                 exchange=self.exchange,
                 strategy_id=self.strategy_id,

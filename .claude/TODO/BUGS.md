@@ -196,14 +196,9 @@
 
 ---
 
-### BUG-75: Order quantity rounding uses fixed 8 decimals
+### ~~BUG-75: Order quantity rounding uses fixed 8 decimals~~ ✅ FIXED
 
-**File:** `risk/manager.py` — Lines 178–185
-**Severity:** MEDIUM
-
-`round(quantity, 8)` — crypto needs variable precision per token; stocks need integers or 0.001. Alpaca rejects fractional shares with too many decimals.
-
-**Fix:** Use exchange-specific precision rules.
+**Fixed in:** BUG-75 commit. Added `round_quantity(qty, exchange)` to `shared/enums.py`. Binance → 6 decimals, Alpaca → 2 decimals. Applied in V1 `_signal_to_order()` and V2 `WeightRebalancer.rebalance()`.
 
 ---
 
