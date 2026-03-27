@@ -64,6 +64,11 @@ class MarketCalendar:
     def __init__(self, exchange: Exchange):
         self._exchange = exchange
         self._is_crypto = (exchange == Exchange.BINANCE)
+        if not self._is_crypto and exchange != Exchange.ALPACA:
+            logger.warning(
+                "MarketCalendar: unknown exchange '%s' — defaulting to US equity hours",
+                exchange,
+            )
 
     @property
     def exchange(self) -> Exchange:
