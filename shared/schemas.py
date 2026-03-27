@@ -6,7 +6,7 @@ and deserializable via .model_validate_json().
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -142,7 +142,11 @@ class LogEntry(BaseModel):
     Stored in-memory ring buffer on the web server, streamed to browser via SSE.
     """
 
-    event_type: str  # tick_eval, signal, order_fill, risk_approve, risk_reject, session_event, error
+    event_type: Literal[
+        "data_scrape", "liquidation_order", "order_failed", "order_fill",
+        "order_placed", "order_submit", "risk_approve", "risk_reject",
+        "schedule_event", "session_event", "strategy_error", "strategy_eval",
+    ]
     session_id: str = ""
     symbol: str = ""
     message: str = ""

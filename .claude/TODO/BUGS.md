@@ -469,12 +469,9 @@ All HTTP calls have fixed timeouts, no retry, no exponential backoff, no 429 han
 
 ---
 
-### BUG-90: `LogEntry.event_type` allows arbitrary strings
+### ~~BUG-90: `LogEntry.event_type` allows arbitrary strings~~ ✅ FIXED
 
-**File:** `shared/schemas.py` — Lines 139–146
-**Severity:** MEDIUM
-
-No enum validation. Invalid event types silently pass, causing log filtering/analysis failures.
+**Fixed in:** commit (BUG-90). Changed `event_type` from `str` to `Literal[...]` with all 12 valid event types. Pydantic now rejects unknown event types at validation time.
 
 ---
 
