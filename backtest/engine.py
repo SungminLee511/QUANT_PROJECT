@@ -45,7 +45,7 @@ class BacktestMetrics:
     """Aggregate performance metrics."""
     total_return_pct: float = 0.0
     annualized_return_pct: float = 0.0
-    sharpe_ratio: float = 0.0
+    sharpe_ratio: float | None = None  # None = not computable (too few bars or zero vol)
     max_drawdown_pct: float = 0.0
     win_rate_pct: float = 0.0
     profit_factor: float = 0.0
@@ -61,7 +61,12 @@ class BacktestMetrics:
     fees_pct: float = 0.0
 
     def to_dict(self) -> dict:
-        return self.__dict__
+        d = dict(self.__dict__)
+        # JSON doesn't support inf — convert to string for display
+        sr = d.get("sharpe_ratio")
+        if sr is not None and isinstance(sr, float) and math.isinf(sr):
+            d["sharpe_ratio"] = "\u221e" if sr > 0 else "-\u221e"
+        return d
 
 
 @dataclass
@@ -444,9 +449,15 @@ def _compute_metrics(
 
     if daily_returns:
         avg_ret = np.mean(daily_returns)
-        std_ret = np.std(daily_returns, ddof=1) if len(daily_returns) > 1 else 0
+        std_ret = np.std(daily_returns, ddof=1) if len(daily_returns) > 1 else 0.0
         if std_ret > 0:
             metrics.sharpe_ratio = round(avg_ret / std_ret * math.sqrt(252), 2)
+        elif avg_ret > 0:
+            metrics.sharpe_ratio = float("inf")  # Positive return, zero volatility
+        elif avg_ret == 0:
+            metrics.sharpe_ratio = 0.0  # Zero return, zero volatility
+        else:
+            metrics.sharpe_ratio = float("-inf")  # Negative return, zero volatility
 
     # Max drawdown
     peak = equities[0]

@@ -497,29 +497,29 @@ All HTTP calls have fixed timeouts, no retry, no exponential backoff, no 429 han
 
 **Fixed in:** commit (BUG-95). Default changed from `""` to `"N/A"`. Single-point curves now set both dates. Empty curves retain `"N/A"`.
 
-### BUG-96: Default strategy path not validated at module load
+### ~~BUG-96: Default strategy path not validated at module load~~ ✅ FIXED
 
-**File:** `session/manager.py` — Line 56 — If file deleted, empty strategy code with no warning.
+**Fixed in:** BUG-96/97/ERR-5 commit. Logs warning if default strategy file missing.
 
-### BUG-97: No timeout on collector stop in `stop_session()`
+### ~~BUG-97: No timeout on collector stop in `stop_session()`~~ ✅ FIXED
 
-**File:** `session/manager.py` — Line 315 — Hung collector blocks entire session stop.
+**Fixed in:** BUG-96/97/ERR-5 commit. Added 10s timeout on collector stop.
 
-### BUG-98: Session status not atomic with pipeline state
+### ~~BUG-98: Session status not atomic with pipeline state~~ ✅ FIXED
 
-**File:** `session/manager.py` — Lines 281, 300 — DB write failure leaves pipeline running but DB says stopped.
+**Fixed in:** BUG-98/100 commit. Resilient status update with try-except.
 
-### BUG-99: Duplicate symbols in session config not detected
+### ~~BUG-99: Duplicate symbols in session config not detected~~ ✅ FIXED
 
-**File:** `session/manager.py` — Line 254 — Causes array index confusion in price tracking.
+**Fixed in:** VAL-1 commit. Symbol list is deduplicated while preserving order in `start_session()`.
 
-### BUG-100: `_publish_log()` silently swallows all errors at debug level
+### ~~BUG-100: `_publish_log()` silently swallows all errors at debug level~~ ✅ FIXED
 
-**File:** `session/manager.py` — Lines 816–829 — Loss of observability in production.
+**Fixed in:** BUG-98/100 commit. Changed to WARNING level for publish failures.
 
-### BUG-101: Sharpe ratio 0.0 ambiguous for zero-volatility returns
+### ~~BUG-101: Sharpe ratio 0.0 ambiguous for zero-volatility returns~~ ✅ FIXED
 
-**File:** `backtest/engine.py` — Lines 441–445 — Can't distinguish "no returns" from "flat positive returns".
+**Fixed in:** commit (BUG-101). Default `None` (not computable), `0.0` (zero return), `inf`/`-inf` (zero-vol positive/negative). `to_dict()` converts inf to ∞ for JSON.
 
 ### BUG-102: Alpaca missing credentials silently skipped per fetch
 
