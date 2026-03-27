@@ -84,6 +84,7 @@ class Trade(Base):
 
     __table_args__ = (
         Index("ix_trades_session_symbol_timestamp", "session_id", "symbol", "timestamp"),
+        UniqueConstraint("session_id", "order_id", name="uq_trades_session_order"),
     )
 
 
