@@ -40,6 +40,8 @@ def init_engine(config: dict):
 
 async def init_db():
     """Create all tables. Call once at startup after init_engine()."""
+    if _engine is None:
+        raise RuntimeError("Database engine not initialized. Call init_engine() first.")
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
