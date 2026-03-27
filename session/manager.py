@@ -256,6 +256,18 @@ class SessionManager:
         session_type = SessionType(info["session_type"])
         config_data = info.get("config", {})
         symbols = config_data.get("symbols", ["BTCUSDT"])
+
+        # Validate symbols
+        if not symbols or not isinstance(symbols, list):
+            logger.error("Session %s: symbols list is empty or invalid", session_id)
+            return False
+        symbols = [str(s).strip() for s in symbols if s]
+        # Deduplicate while preserving order
+        seen = set()
+        symbols = [s for s in symbols if s and s not in seen and not seen.add(s)]
+        if not symbols:
+            logger.error("Session %s: no valid symbols after cleanup", session_id)
+            return False
         starting_budget = info.get("starting_budget") or self._config.get("sessions", {}).get("default_sim_budget", 10000.0)
         strategy_code = info.get("strategy_code", "")
         data_config = info.get("data_config") or DEFAULT_DATA_CONFIG
