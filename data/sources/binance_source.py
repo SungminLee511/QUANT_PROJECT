@@ -118,8 +118,10 @@ class BinanceSource:
                 )
                 resp.raise_for_status()
                 book = resp.json()
-                bid = float(book["bids"][0][0]) if book.get("bids") else 0.0
-                ask = float(book["asks"][0][0]) if book.get("asks") else 0.0
+                bids_list = book.get("bids") or []
+                asks_list = book.get("asks") or []
+                bid = float(bids_list[0][0]) if len(bids_list) > 0 and len(bids_list[0]) > 0 else 0.0
+                ask = float(asks_list[0][0]) if len(asks_list) > 0 and len(asks_list[0]) > 0 else 0.0
                 return symbol, bid, ask
 
             with ThreadPoolExecutor(max_workers=min(n, 10)) as pool:
@@ -208,9 +210,16 @@ class BinanceSource:
 
                 for j, k in enumerate(recent):
                     col = lookback - take + j
-                    o, h, lo, c, v = float(k[1]), float(k[2]), float(k[3]), float(k[4]), float(k[5])
-                    quote_vol = float(k[7])
-                    trades = float(k[8])
+                    if len(k) < 9:
+                        logger.warning("Binance kline truncated for %s (got %d fields, need 9)", symbol, len(k))
+                        continue
+                    try:
+                        o, h, lo, c, v = float(k[1]), float(k[2]), float(k[3]), float(k[4]), float(k[5])
+                        quote_vol = float(k[7])
+                        trades = float(k[8])
+                    except (ValueError, TypeError) as e:
+                        logger.warning("Binance kline parse error for %s at bar %d: %s", symbol, j, e)
+                        continue
 
                     if "open" in field_arrays:
                         field_arrays["open"][idx, col] = o
@@ -226,7 +235,12 @@ class BinanceSource:
                         field_arrays["volume"][idx, col] = v
                     if "vwap" in field_arrays:
                         # Approximate VWAP = quote_volume / volume
-                        field_arrays["vwap"][idx, col] = (quote_vol / v) if v > 0 else c
+                        if v > 0:
+                            field_arrays["vwap"][idx, col] = quote_vol / v
+                        elif c > 0:
+                            field_arrays["vwap"][idx, col] = c
+                        else:
+                            logger.debug("VWAP fallback: zero volume and zero close for %s bar %d", symbol, j)
                     if "num_trades" in field_arrays:
                         field_arrays["num_trades"][idx, col] = trades
             except Exception:
