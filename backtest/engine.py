@@ -286,6 +286,83 @@ def download_historical_data(
     return result
 
 
+def _binance_to_yf_symbol(symbol: str) -> str:
+    """Convert Binance symbol (BTCUSDT) to yfinance crypto symbol (BTC-USD).
+
+    Common quote assets: USDT, BUSD, USD, USDC, BTC, ETH.
+    """
+    sym = symbol.upper()
+    for quote in ("USDT", "BUSD", "USDC"):
+        if sym.endswith(quote):
+            base = sym[: -len(quote)]
+            return f"{base}-USD"
+    return sym  # fallback — pass through as-is
+
+
+def download_historical_data_binance(
+    symbols: list[str],
+    start_date: str,
+    end_date: str,
+    interval: str = "1d",
+) -> pd.DataFrame:
+    """Download crypto OHLCV via yfinance (converts Binance-style symbols).
+
+    Binance API is geo-restricted, so we use yfinance with converted tickers
+    (e.g. BTCUSDT → BTC-USD). The returned DataFrame uses the *original*
+    Binance symbol names so the rest of the backtest engine stays consistent.
+    """
+    # Convert symbols for yfinance download
+    yf_map = {s: _binance_to_yf_symbol(s) for s in symbols}
+
+    all_frames = []
+    for orig_sym, yf_sym in yf_map.items():
+        try:
+            df = yf.download(
+                yf_sym,
+                start=start_date,
+                end=end_date,
+                interval=interval,
+                progress=False,
+                auto_adjust=True,
+            )
+            if df.empty:
+                logger.warning("No data for %s (yf: %s) (%s to %s)", orig_sym, yf_sym, start_date, end_date)
+                continue
+
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+
+            df = df.reset_index()
+            df["Symbol"] = orig_sym  # keep original Binance symbol name
+
+            rename_map = {}
+            for col in df.columns:
+                cl = col.lower()
+                if cl in ("date", "datetime"):
+                    rename_map[col] = "Date"
+                elif cl == "open":
+                    rename_map[col] = "Open"
+                elif cl == "high":
+                    rename_map[col] = "High"
+                elif cl == "low":
+                    rename_map[col] = "Low"
+                elif cl == "close":
+                    rename_map[col] = "Close"
+                elif cl == "volume":
+                    rename_map[col] = "Volume"
+            df = df.rename(columns=rename_map)
+            all_frames.append(df[["Date", "Symbol", "Open", "High", "Low", "Close", "Volume"]])
+        except Exception:
+            logger.exception("Failed to download data for %s (yf: %s)", orig_sym, yf_sym)
+
+    if not all_frames:
+        return pd.DataFrame(columns=["Date", "Symbol", "Open", "High", "Low", "Close", "Volume"])
+
+    result = pd.concat(all_frames, ignore_index=True)
+    result = result.sort_values(["Date", "Symbol"]).reset_index(drop=True)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Rolling buffer builder
 # ---------------------------------------------------------------------------
@@ -439,6 +516,7 @@ def run_backtest(
     strategy_mode: str = "rebalance",
     short_loss_limit_pct: float = 1.0,
     commission_pct: float = 0.0,
+    is_crypto: bool = False,
 ) -> BacktestResult:
     """Run a V2 weight-based backtest.
 
@@ -490,7 +568,10 @@ def run_backtest(
 
     # 3. Download historical data
     try:
-        data = download_historical_data(symbols, start_date, end_date, interval)
+        if is_crypto:
+            data = download_historical_data_binance(symbols, start_date, end_date, interval)
+        else:
+            data = download_historical_data(symbols, start_date, end_date, interval)
     except Exception as e:
         result.errors.append(f"Failed to download data: {e}")
         return result
@@ -529,6 +610,7 @@ def run_backtest(
     dates_sorted = sorted(grouped.groups.keys())
 
     bar_count = 0
+    _warmup_logged = False
 
     for date in dates_sorted:
         day_data = grouped.get_group(date)
@@ -597,7 +679,19 @@ def run_backtest(
         # Run strategy every N bars
         if bar_count % exec_every_n == 0:
             snapshot = _build_data_snapshot(buffers, fill_counts, fields, symbols)
+            if snapshot is None:
+                if not _warmup_logged:
+                    min_needed = max(fields.values()) if fields else 1
+                    logger.info(
+                        "Backtest warmup: skipping bar %d — need %d bars for lookback (have %s)",
+                        bar_count, min_needed,
+                        {f: fill_counts.get(f, 0) for f in fields},
+                    )
+                    _warmup_logged = True
             if snapshot is not None:
+                if _warmup_logged:
+                    logger.info("Backtest warmup complete at bar %d — strategy execution begins", bar_count)
+                    _warmup_logged = False  # Don't log again
                 try:
                     weights = executor.execute(snapshot)
                     new_trades = portfolio.rebalance(weights, date_str)
@@ -693,6 +787,7 @@ async def run_backtest_async(
     strategy_mode: str = "rebalance",
     short_loss_limit_pct: float = 1.0,
     commission_pct: float = 0.0,
+    is_crypto: bool = False,
 ) -> BacktestResult:
     """Async entry point — runs the sync backtest in a dedicated thread pool.
 
@@ -723,5 +818,6 @@ async def run_backtest_async(
                 strategy_mode=strategy_mode,
                 short_loss_limit_pct=short_loss_limit_pct,
                 commission_pct=commission_pct,
+                is_crypto=is_crypto,
             ),
         )
