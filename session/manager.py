@@ -394,7 +394,7 @@ class SessionManager:
         exchange = st.exchange
 
         # Build per-session config (for OrderRouter/PortfolioTracker)
-        session_config = self._build_session_config(sid, config_data, symbols)
+        session_config = self._build_session_config(sid, config_data, symbols, st)
 
         pipeline.data_config = data_config
 
@@ -549,14 +549,11 @@ class SessionManager:
             "liquidate_minutes_before_close", 5
         )
         liquidated_today = False
+        last_liquidation_date: str | None = None  # FAUDIT-14: Track date to avoid reset on transient glitches
 
         while pipeline.running:
             try:
                 if calendar.is_market_open():
-                    # Reset daily liquidation flag on new trading day
-                    if not liquidated_today:
-                        pass  # market open, haven't liquidated yet — normal operation
-
                     # Check if we need to liquidate before close
                     if (
                         pipeline.schedule_mode == "market_hours_liquidate"
@@ -565,14 +562,20 @@ class SessionManager:
                     ):
                         await self._liquidate_session(pipeline, starting_budget)
                         liquidated_today = True
+                        from datetime import date
+                        last_liquidation_date = date.today().isoformat()
                         await self._publish_log(
                             sid, "schedule_event",
                             f"Pre-close liquidation triggered ({liquidate_minutes} min before close)",
                             metadata={"schedule_mode": pipeline.schedule_mode},
                         )
                 else:
-                    # Market closed — reset liquidation flag for next day
-                    liquidated_today = False
+                    # FAUDIT-14: Only reset flag on a genuine new day, not transient
+                    # is_market_open() returning False during market hours
+                    from datetime import date
+                    today = date.today().isoformat()
+                    if last_liquidation_date and today != last_liquidation_date:
+                        liquidated_today = False
 
             except asyncio.CancelledError:
                 return
@@ -649,6 +652,11 @@ class SessionManager:
         sid = pipeline.session_id
 
         if not pipeline.executor or not pipeline.rebalancer:
+            return
+
+        # FAUDIT-9: Guard against executing after stop_session sets running=False.
+        # This callback is fired by DataCollector and can race with stop teardown.
+        if not pipeline.running:
             return
 
         try:
@@ -809,7 +817,10 @@ class SessionManager:
             logger.exception("Session %s: strategy cycle error", sid)
             await self._publish_log(sid, "strategy_error", "Strategy cycle failed", level="error")
 
-    def _build_session_config(self, session_id: str, config_data: dict, symbols: list[str]) -> dict:
+    def _build_session_config(
+        self, session_id: str, config_data: dict, symbols: list[str],
+        session_type: "SessionType | None" = None,
+    ) -> dict:
         """Build a per-session config dict with namespaced Redis channels."""
         cfg = copy.deepcopy(self._config)
 
@@ -827,7 +838,12 @@ class SessionManager:
         cfg["risk"]["portfolio_state_key"] = session_channel(session_id, "portfolio:state")
 
         if config_data.get("api_key"):
-            exchange_key = "binance" if "binance" in config_data.get("type", "") else "alpaca"
+            # FAUDIT-2: Use session_type.exchange instead of inspecting config_data
+            # (config_data never contains "type" — it's stored in TradingSession.session_type)
+            if session_type is not None:
+                exchange_key = "binance" if session_type.exchange == Exchange.BINANCE else "alpaca"
+            else:
+                exchange_key = "binance" if "binance" in config_data.get("type", "") else "alpaca"
             cfg.setdefault(exchange_key, {}).update({
                 "api_key": config_data.get("api_key", ""),
                 "api_secret": config_data.get("api_secret", ""),

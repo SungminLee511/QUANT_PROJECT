@@ -92,13 +92,18 @@ class PortfolioTracker:
                 return
 
             # Compute incremental fill qty (cumulative → delta)
+            # FAUDIT-1: Use sentinel -1.0 instead of pop() for completed orders.
+            # If we pop, a duplicate FILLED message sees prev_filled=0.0 and
+            # re-applies the entire fill amount, doubling the position.
             prev_filled = self._last_filled.get(update.order_id, 0.0)
+            if prev_filled < 0:
+                return  # Already fully processed — duplicate FILLED message
             delta_qty = update.filled_qty - prev_filled
             self._last_filled[update.order_id] = update.filled_qty
 
-            # Clean up tracking for completed orders
+            # Mark completed orders with sentinel (cleaned up periodically)
             if update.status == OrderStatus.FILLED:
-                self._last_filled.pop(update.order_id, None)
+                self._last_filled[update.order_id] = -1.0
 
             if delta_qty <= 0:
                 return  # No new fill (duplicate or stale update)
@@ -321,6 +326,11 @@ class PortfolioTracker:
                 logger.debug("Equity snapshot: %.2f (session=%s)", equity, self._session_id)
             except Exception:
                 logger.exception("Error saving equity snapshot")
+
+            # FAUDIT-1: Prune completed-order sentinels to prevent memory leak
+            completed = [k for k, v in self._last_filled.items() if v < 0]
+            for k in completed:
+                del self._last_filled[k]
 
             # ARCH-8: Reconcile in-memory vs DB positions every 5 snapshots (~5 min)
             reconcile_counter += 1

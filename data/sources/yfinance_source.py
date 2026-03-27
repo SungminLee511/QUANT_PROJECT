@@ -122,21 +122,24 @@ class YFinanceSource:
                 try:
                     series = df[(yf_col, sym)] if multi else df[yf_col]
                     vals = series.dropna()
-                    return float(vals.iloc[-1]) if len(vals) > 0 else 0.0
+                    # FAUDIT-10: Return NaN (not 0.0) on missing data
+                    return float(vals.iloc[-1]) if len(vals) > 0 else np.nan
                 except (KeyError, IndexError):
-                    return 0.0
+                    return np.nan
 
             def _prev_close(sym: str) -> float:
                 """Get previous day's close (second-to-last row)."""
                 try:
                     series = df[("Close", sym)] if multi else df["Close"]
                     vals = series.dropna()
-                    return float(vals.iloc[-2]) if len(vals) >= 2 else 0.0
+                    # FAUDIT-17: Return NaN (not 0.0) when prev close unavailable
+                    return float(vals.iloc[-2]) if len(vals) >= 2 else np.nan
                 except (KeyError, IndexError):
-                    return 0.0
+                    return np.nan
 
             for field_name in fields:
-                values = np.zeros(n, dtype=np.float64)
+                # FAUDIT-10: Use NaN default so missing symbols don't get 0.0
+                values = np.full(n, np.nan, dtype=np.float64)
                 for i, sym in enumerate(symbols):
                     if field_name == "price":
                         values[i] = _col("Close", sym)
@@ -153,7 +156,10 @@ class YFinanceSource:
                     elif field_name == "day_change_pct":
                         price = _col("Close", sym)
                         prev = _prev_close(sym)
-                        values[i] = ((price - prev) / prev * 100) if prev > 0 else 0.0
+                        # FAUDIT-17: Use NaN when prev close unavailable (0% is meaningful data)
+                        if not np.isnan(prev) and not np.isnan(price) and prev > 0:
+                            values[i] = (price - prev) / prev * 100
+                        # else: stays NaN from np.full initialization
                 result[field_name] = values
 
             return True

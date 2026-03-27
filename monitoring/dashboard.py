@@ -120,9 +120,11 @@ def create_dashboard_router(
             from sqlalchemy import select
 
             async with get_session() as session:
-                stmt = select(Order).order_by(Order.created_at.desc()).limit(100)
+                # FAUDIT-12: Apply WHERE before LIMIT so we get the right 100 for this session
+                stmt = select(Order)
                 if session_id:
                     stmt = stmt.where(Order.session_id == session_id)
+                stmt = stmt.order_by(Order.created_at.desc()).limit(100)
                 result = await session.execute(stmt)
                 orders = result.scalars().all()
                 return JSONResponse({
@@ -154,13 +156,11 @@ def create_dashboard_router(
             from sqlalchemy import select
 
             async with get_session() as session:
-                stmt = (
-                    select(EquitySnapshot)
-                    .order_by(EquitySnapshot.timestamp.desc())
-                    .limit(500)
-                )
+                # FAUDIT-12: Apply WHERE before LIMIT
+                stmt = select(EquitySnapshot)
                 if session_id:
                     stmt = stmt.where(EquitySnapshot.session_id == session_id)
+                stmt = stmt.order_by(EquitySnapshot.timestamp.desc()).limit(500)
                 result = await session.execute(stmt)
                 snapshots = result.scalars().all()
                 return JSONResponse({

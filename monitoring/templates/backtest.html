@@ -349,11 +349,12 @@ function showResults(data) {
     document.getElementById('tradeCount').textContent = data.trades.length;
 
     const tbody = document.getElementById('tradeBody');
+    // FAUDIT-6: Escape user-derived values to prevent XSS
     tbody.innerHTML = data.trades.map(t => `
         <tr>
-            <td>${t.timestamp}</td>
-            <td>${t.symbol}</td>
-            <td class="${t.side}">${t.side.toUpperCase()}</td>
+            <td>${escHtml(t.timestamp)}</td>
+            <td>${escHtml(t.symbol)}</td>
+            <td class="${escHtml(t.side)}">${escHtml(t.side.toUpperCase())}</td>
             <td>${fmtNum(t.quantity)}</td>
             <td>$${fmtNum(t.price)}</td>
             <td>$${fmtNum(t.equity_after)}</td>
@@ -377,6 +378,11 @@ function fmtPct(val) { return (val >= 0 ? '+' : '') + val.toFixed(2) + '%'; }
 function fmtNum(val) {
     if (Math.abs(val) >= 1) return val.toLocaleString(undefined, {maximumFractionDigits: 2});
     return val.toPrecision(4);
+}
+
+// FAUDIT-6: Escape HTML to prevent XSS in innerHTML
+function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function renderEquityChart(curve) {

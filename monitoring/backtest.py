@@ -93,7 +93,16 @@ def create_backtest_router(
                 "errors": ["Start date and end date are required"],
             })
 
-        starting_cash = float(body.get("starting_cash", 10000))
+        # FAUDIT-22: Safely convert numeric inputs (reject non-numeric with user-friendly error)
+        try:
+            starting_cash = float(body.get("starting_cash", 10000))
+            short_loss_limit_pct = float(body.get("short_loss_limit_pct", 1.0))
+            commission_pct = float(body.get("commission_pct", 0.0))
+        except (ValueError, TypeError) as e:
+            return JSONResponse({
+                "success": False,
+                "errors": [f"Invalid numeric input: {e}"],
+            })
         interval = body.get("interval", "1d")
         # Track which fields user explicitly provided vs. defaulted
         _has_strategy_mode = "strategy_mode" in body
@@ -101,8 +110,6 @@ def create_backtest_router(
         _has_commission = "commission_pct" in body
 
         strategy_mode = body.get("strategy_mode", "rebalance")
-        short_loss_limit_pct = float(body.get("short_loss_limit_pct", 1.0))
-        commission_pct = float(body.get("commission_pct", 0.0))
 
         # Determine if crypto session — check multiple signals
         is_crypto = False

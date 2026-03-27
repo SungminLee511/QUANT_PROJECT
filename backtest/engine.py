@@ -142,8 +142,9 @@ class _VirtualPortfolio:
             old_qty = self.positions.get(symbol, 0.0)
 
             if diff_value > 0:
-                # BUY — can't spend more than available cash
-                max_buy_value = self.cash
+                # BUY — can't spend more than available cash (including commission)
+                # FAUDIT-5: Reserve room for fee so cash doesn't go negative
+                max_buy_value = self.cash / (1.0 + self.commission_rate) if self.commission_rate > 0 else self.cash
                 actual_value = min(abs(diff_value), max_buy_value)
                 if actual_value < 1.0:
                     continue

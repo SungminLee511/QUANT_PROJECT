@@ -28,13 +28,25 @@ def check_position_size(
         # BUG-30 fix: reject when equity/price unavailable instead of blindly allowing
         return False, "Cannot evaluate position size: equity or price unavailable"
 
-    # BUG-68 fix: use same sizing formula as RiskManager._signal_to_order()
-    # Actual order notional = equity * max_pct * strength (see risk/manager.py line 178)
-    estimated_value = signal.strength * max_pct * total_equity
+    # FAUDIT-4: Check total position exposure (existing + proposed), not just the
+    # proposed order.  The old check compared (strength * max_pct * equity) against
+    # (max_pct * equity), which is always true since strength ∈ [0, 1].
+    proposed_notional = signal.strength * max_pct * total_equity
+    # Current position value for this symbol
+    position_symbols = portfolio_state.get("position_symbols", set())
+    existing_value = 0.0
+    if signal.symbol in position_symbols:
+        positions = portfolio_state.get("positions", [])
+        for pos in positions:
+            if pos.get("symbol") == signal.symbol:
+                existing_value = abs(pos.get("quantity", 0) * current_price)
+                break
+    total_exposure = existing_value + proposed_notional
     max_allowed = total_equity * max_pct
-    if estimated_value > max_allowed:
+    if total_exposure > max_allowed:
         return False, (
-            f"Position value ${estimated_value:.0f} would exceed "
+            f"Position exposure ${total_exposure:.0f} (existing ${existing_value:.0f} + "
+            f"new ${proposed_notional:.0f}) would exceed "
             f"{max_pct*100:.0f}% of equity (${max_allowed:.0f})"
         )
 

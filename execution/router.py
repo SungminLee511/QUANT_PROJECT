@@ -130,7 +130,8 @@ class OrderRouter:
                         )
                     else:
                         live_status = await adapter.get_order_status(external_id)
-                    if live_status.status in (OrderStatus.FILLED, OrderStatus.PARTIALLY_FILLED):
+                    # FAUDIT-3: OrderStatus.PARTIALLY_FILLED doesn't exist — use PARTIAL
+                    if live_status.status in (OrderStatus.FILLED, OrderStatus.PARTIAL):
                         order.transition(live_status.status)
                         order.filled_quantity = live_status.filled_qty
                         order.avg_price = live_status.avg_price
@@ -139,8 +140,17 @@ class OrderRouter:
         except Exception:
             logger.exception("Failed to place order %s (session=%s)", order_id, self._session_id)
             order.transition(OrderStatus.FAILED)
-            self._open_orders[order_id] = order
             await self._persist_order(order)
+            # FAUDIT-13: Publish OrderUpdate so downstream (tracker, risk) knows the order failed
+            fail_update = OrderUpdate(
+                order_id=order_id,
+                symbol=request.symbol,
+                side=request.side,
+                status=OrderStatus.FAILED,
+                exchange=request.exchange,
+                session_id=self._session_id,
+            )
+            await self._redis.publish(self._update_channel, fail_update)
             await self._publish_log(
                 "order_failed", request.symbol,
                 f"FAILED {request.side.value.upper()} {request.symbol} qty={request.quantity:.6f}",

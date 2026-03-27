@@ -73,7 +73,7 @@ class Reconciler:
             try:
                 exchange_positions = await self._binance.get_positions()
                 exchange_symbols = {
-                    p["symbol"] for p in exchange_positions if p["quantity"] > 0
+                    p["symbol"] for p in exchange_positions if abs(p.get("quantity", 0)) > 0.0001
                 }
                 self._check_drift("Binance", local_symbols, exchange_symbols)
             except Exception:
@@ -84,7 +84,7 @@ class Reconciler:
             try:
                 exchange_positions = await self._alpaca.get_positions()
                 exchange_symbols = {
-                    p["symbol"] for p in exchange_positions if p["quantity"] > 0
+                    p["symbol"] for p in exchange_positions if abs(p.get("quantity", 0)) > 0.0001
                 }
                 self._check_drift("Alpaca", local_symbols, exchange_symbols)
             except Exception:

@@ -116,8 +116,9 @@ class BinanceSource:
 
         # 2. Fetch order book for bid/ask/spread (concurrent, no multi-symbol endpoint)
         if needs_orderbook:
-            bids = np.zeros(n, dtype=np.float64)
-            asks = np.zeros(n, dtype=np.float64)
+            # FAUDIT-11: Use NaN so failed fetches don't masquerade as real bid=0/ask=0
+            bids = np.full(n, np.nan, dtype=np.float64)
+            asks = np.full(n, np.nan, dtype=np.float64)
 
             def _fetch_book(symbol: str) -> tuple[str, float, float]:
                 resp = retry_request(

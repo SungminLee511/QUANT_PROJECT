@@ -36,6 +36,22 @@ class BinanceAdapter(BaseExchangeAdapter):
         )
         logger.info("Binance adapter connected (testnet=%s)", self._testnet)
 
+        # FAUDIT-15: Rebuild order-symbol map from open orders so cancels work after restart
+        try:
+            open_orders = await self._client.get_open_orders()
+            for order in open_orders:
+                oid = str(order.get("orderId", ""))
+                sym = order.get("symbol", "")
+                if oid and sym:
+                    self._order_symbols[oid] = sym
+            if self._order_symbols:
+                logger.info(
+                    "Restored %d open order-symbol mappings from Binance",
+                    len(self._order_symbols),
+                )
+        except Exception:
+            logger.warning("Failed to restore open order mappings from Binance", exc_info=True)
+
     async def disconnect(self) -> None:
         if self._client:
             await self._client.close_connection()

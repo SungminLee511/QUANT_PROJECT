@@ -272,7 +272,7 @@
                 {% else %}
                 <button class="card-btn start" onclick="startSession('{{ s.id }}')" id="action-{{ s.id }}">Start</button>
                 {% endif %}
-                <button class="card-btn" onclick="deleteSession('{{ s.id }}', '{{ s.name | e }}')">Delete</button>
+                <button class="card-btn" data-sid="{{ s.id }}" data-sname="{{ s.name | e }}" onclick="deleteSession(this.dataset.sid, this.dataset.sname)">Delete</button>
             </div>
         </div>
         {% endfor %}

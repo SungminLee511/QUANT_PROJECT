@@ -98,10 +98,16 @@ class WeightRebalancer:
                 if qty * price < MIN_ORDER_VALUE:
                     continue
 
+            # FAUDIT-8: round_quantity can produce 0.0 for small values,
+            # which fails Pydantic validation (quantity: Field(gt=0))
+            rounded_qty = round_quantity(qty, self.exchange)
+            if rounded_qty <= 0:
+                continue
+
             order = OrderRequest(
                 symbol=symbol,
                 side=side,
-                quantity=round_quantity(qty, self.exchange),
+                quantity=rounded_qty,
                 order_type=OrderType.MARKET,
                 exchange=self.exchange,
                 strategy_id=self.strategy_id,

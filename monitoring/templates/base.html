@@ -170,7 +170,7 @@
                         {% else %}
                         <button class="sc-btn start" onclick="event.stopPropagation(); startSession('{{ s.id }}')">Start</button>
                         {% endif %}
-                        <button class="sc-btn delete" onclick="event.stopPropagation(); deleteSession('{{ s.id }}', '{{ s.name }}')">Delete</button>
+                        <button class="sc-btn delete" data-sid="{{ s.id }}" data-sname="{{ s.name | e }}" onclick="event.stopPropagation(); deleteSession(this.dataset.sid, this.dataset.sname)">Delete</button>
                     </div>
                     {% endfor %}
                 {% else %}

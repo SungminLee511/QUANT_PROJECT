@@ -126,6 +126,11 @@ class RateLimiter:
             return None
 
         route_key, rule = match
+
+        # FAUDIT-21: Only rate-limit state-changing methods for login
+        # (GET /login is just viewing the form — don't count it)
+        if route_key == "/login" and request.method == "GET":
+            return None
         client_key = self._get_client_key(request)
         now = time.monotonic()
         counter_key = (client_key, route_key)

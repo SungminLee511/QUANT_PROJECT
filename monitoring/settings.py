@@ -63,7 +63,17 @@ def _write_env(env: dict[str, str]) -> None:
         if key not in written_keys:
             lines.append(f"{key}={value}")
 
-    ENV_FILE.write_text("\n".join(lines) + "\n")
+    # FAUDIT-16: Write-to-temp-then-rename for atomicity
+    import tempfile
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=str(ENV_FILE.parent), suffix=".env.tmp")
+    try:
+        import os
+        with os.fdopen(tmp_fd, "w") as f:
+            f.write("\n".join(lines) + "\n")
+        Path(tmp_path).replace(ENV_FILE)
+    except Exception:
+        Path(tmp_path).unlink(missing_ok=True)
+        raise
 
 
 def _mask_key(value: str) -> str:
