@@ -183,7 +183,7 @@ class YFinanceSource:
                 if "volume" in fields:
                     result["volume"][i] = float(fi.get("lastVolume", 0) or fi.get("last_volume", 0) or 0)
                 if "day_change_pct" in fields:
-                    if prev_close and prev_close > 0:
+                    if prev_close is not None and prev_close > 0:
                         result["day_change_pct"][i] = ((price - prev_close) / prev_close) * 100
             except Exception:
                 logger.warning("yfinance fast_info fallback error for %s", symbol, exc_info=True)
