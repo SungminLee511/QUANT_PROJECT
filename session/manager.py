@@ -563,7 +563,11 @@ class SessionManager:
             except Exception:
                 logger.exception("Schedule loop error (session=%s)", sid)
 
-            await asyncio.sleep(30)  # check every 30 seconds
+            # Sleep in short intervals so CancelledError is caught quickly
+            for _ in range(6):
+                if not pipeline.running:
+                    return
+                await asyncio.sleep(5)
 
     async def _liquidate_session(self, pipeline: SessionPipeline, starting_budget: float) -> None:
         """Force-rebalance to zero weights (flatten all positions)."""
