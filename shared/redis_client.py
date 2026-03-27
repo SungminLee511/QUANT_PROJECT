@@ -48,14 +48,24 @@ class RedisClient:
             await self._pubsub.close()
         if self._redis:
             await self._redis.close()
+            self._redis = None
         if self._pool:
             await self._pool.disconnect()
+            self._pool = None
+        self._pubsub = None
         logger.info("Redis disconnected")
+
+    def _require_redis(self) -> aioredis.Redis:
+        """Return the Redis instance or raise if disconnected."""
+        if self._redis is None:
+            raise RuntimeError("Redis client is not connected — call connect() first or check disconnect timing")
+        return self._redis
 
     async def publish(self, channel: str, message: BaseModel) -> None:
         """Serialize a Pydantic model and publish to a channel."""
+        r = self._require_redis()
         data = message.model_dump_json()
-        await self._redis.publish(channel, data)
+        await r.publish(channel, data)
 
     async def subscribe(
         self,
@@ -65,7 +75,7 @@ class RedisClient:
     ) -> None:
         """Subscribe to a channel. Callback receives deserialized model or raw dict."""
         if self._pubsub is None:
-            self._pubsub = self._redis.pubsub()
+            self._pubsub = self._require_redis().pubsub()
 
         await self._pubsub.subscribe(channel)
 
@@ -121,7 +131,7 @@ class RedisClient:
                             await self._pubsub.close()
                         except Exception:
                             pass
-                    self._pubsub = self._redis.pubsub()
+                    self._pubsub = self._require_redis().pubsub()
                     channels = list(self._subscriptions.keys())
                     if channels:
                         await self._pubsub.subscribe(*channels)
@@ -150,23 +160,30 @@ class RedisClient:
 
     async def set_flag(self, key: str, value: Any) -> None:
         """Set a Redis key to a JSON-serialized value."""
-        await self._redis.set(key, json.dumps(value))
+        r = self._require_redis()
+        await r.set(key, json.dumps(value))
 
     async def get_flag(self, key: str) -> Any:
         """Get a JSON-deserialized value from a Redis key."""
-        raw = await self._redis.get(key)
+        r = self._require_redis()
+        raw = await r.get(key)
         if raw is None:
             return None
-        return json.loads(raw)
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            logger.error("Malformed JSON in Redis key '%s': %s", key, raw)
+            return None
 
     async def delete_flag(self, key: str) -> None:
         """Delete a Redis key."""
-        await self._redis.delete(key)
+        r = self._require_redis()
+        await r.delete(key)
 
     @property
     def redis(self) -> aioredis.Redis:
         """Access the underlying Redis client."""
-        return self._redis
+        return self._require_redis()
 
 
 def session_channel(session_id: str, base_channel: str) -> str:
