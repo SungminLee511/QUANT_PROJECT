@@ -166,25 +166,15 @@
 
 ## MEDIUM
 
-### BUG-70: `avg_entry_price` corruption on short cover
+### ~~BUG-70: `avg_entry_price` corruption on short cover~~ ✅ FIXED
 
-**File:** `portfolio/tracker.py` — Lines 132–142
-**Severity:** MEDIUM
-
-When a short is fully covered without remainder, `avg_entry_price` stays at the old short entry price. Next long buy uses stale short price for average calculation.
-
-**Fix:** Zero out `avg_entry_price` when `pos["quantity"]` becomes 0.
+**Fixed in:** BUG-36/37 commits. Lines 147-149 zero out both `quantity` and `avg_entry_price` when `abs(pos["quantity"]) <= 0.0001` after short cover. Same guard on SELL side (lines 183-185).
 
 ---
 
-### BUG-71: Concurrent position update race in tracker
+### ~~BUG-71: Concurrent position update race in tracker~~ ✅ FIXED
 
-**File:** `portfolio/tracker.py` — Lines 192–195
-**Severity:** MEDIUM
-
-Position updated in memory, then `_persist_position()` called but not awaited. Concurrent update for same symbol can overwrite with stale data.
-
-**Fix:** Await persist or use per-symbol lock.
+**Fixed in:** CONC-11 commit. `_apply_fill()` runs under `_position_lock` (line 106) and `_persist_position()` is awaited (line 197). Position update + persist is atomic.
 
 ---
 
@@ -194,14 +184,9 @@ Position updated in memory, then `_persist_position()` called but not awaited. C
 
 ---
 
-### BUG-73: Kill switch state lost on Redis restart
+### ~~BUG-73: Kill switch state lost on Redis restart~~ ✅ FIXED
 
-**File:** `risk/kill_switch.py` — All
-**Severity:** MEDIUM
-
-Kill switch stored only in Redis (volatile). Redis restart → trading resumes even if halt was warranted. No DB audit trail.
-
-**Fix:** Persist activations to DB; restore on startup.
+**Fixed in:** BUG-73 commit. Added `KillSwitchEvent` DB model, Alembic migration 004. `KillSwitch.activate()`/`deactivate()` now persist events to DB. `restore_from_db()` called on session startup re-populates Redis if state was lost.
 
 ---
 

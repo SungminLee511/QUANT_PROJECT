@@ -295,6 +295,12 @@ class SessionManager:
         self._pipelines[session_id] = pipeline
 
         try:
+            # BUG-73: Restore kill switch state from DB in case Redis lost it
+            ks_key = session_channel(session_id, "risk:kill_switch")
+            ks = KillSwitch(self._redis, ks_key, session_id=session_id)
+            if await ks.restore_from_db():
+                logger.warning("Session %s: kill switch was active before restart — staying halted", session_id)
+
             await self._start_pipeline(
                 pipeline, config_data, symbols, starting_budget,
                 strategy_code, data_config, custom_data_code,
@@ -648,7 +654,7 @@ class SessionManager:
         try:
             # Check kill switch
             ks_key = session_channel(sid, "risk:kill_switch")
-            kill_switch = KillSwitch(self._redis, ks_key)
+            kill_switch = KillSwitch(self._redis, ks_key, session_id=sid)
             if await kill_switch.is_active():
                 logger.debug("Session %s: kill switch active, skipping strategy", sid)
                 return

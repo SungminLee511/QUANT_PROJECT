@@ -173,6 +173,26 @@ class EquitySnapshot(Base):
     )
 
 
+class KillSwitchEvent(Base):
+    """Audit log for kill switch activations/deactivations.
+
+    Persists kill switch state to survive Redis restarts (BUG-73).
+    The latest event per session determines whether the kill switch is active.
+    """
+    __tablename__ = "kill_switch_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
+
+
 class AlertLog(Base):
     __tablename__ = "alert_logs"
 

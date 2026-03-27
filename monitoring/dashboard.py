@@ -185,7 +185,7 @@ def create_dashboard_router(
         key = _portfolio_key(session_id)
         ks_key = _kill_switch_key(session_id, default_ks_key)
         state = await redis.get_flag(key)
-        kill_switch = KillSwitch(redis, ks_key)
+        kill_switch = KillSwitch(redis, ks_key, session_id=session_id or "")
         ks = await kill_switch.get_state()
         return JSONResponse({
             "kill_switch": ks,
@@ -198,7 +198,7 @@ def create_dashboard_router(
         if not get_current_user(request):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
         ks_key = _kill_switch_key(session_id, default_ks_key)
-        kill_switch = KillSwitch(redis, ks_key)
+        kill_switch = KillSwitch(redis, ks_key, session_id=session_id or "")
         body = await request.json()
         action = body.get("action", "toggle")
         if action == "activate":

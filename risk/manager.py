@@ -32,7 +32,8 @@ class RiskManager:
         self._redis = redis
         self._session_id = session_id
         self._kill_switch = KillSwitch(
-            redis, config.get("risk", {}).get("kill_switch_key", "risk:kill_switch")
+            redis, config.get("risk", {}).get("kill_switch_key", "risk:kill_switch"),
+            session_id=session_id,
         )
         self._running = False
 
