@@ -41,8 +41,8 @@ class MarketTick(BaseModel):
     """A single trade / price update from an exchange."""
 
     symbol: str
-    price: float
-    volume: float
+    price: float = Field(gt=0)
+    volume: float = Field(ge=0)
     timestamp: datetime = Field(default_factory=_utcnow)
     exchange: Exchange
     session_id: str = ""
@@ -53,11 +53,11 @@ class OHLCVBar(BaseModel):
     """Completed OHLCV candlestick bar."""
 
     symbol: str
-    open: float
-    high: float
-    low: float
-    close: float
-    volume: float
+    open: float = Field(gt=0)
+    high: float = Field(gt=0)
+    low: float = Field(gt=0)
+    close: float = Field(gt=0)
+    volume: float = Field(ge=0)
     interval: str  # e.g. "1m", "5m", "1h"
     timestamp: datetime = Field(default_factory=_utcnow)
     exchange: Exchange
@@ -108,8 +108,8 @@ class OrderUpdate(BaseModel):
     symbol: str
     side: Side
     status: OrderStatus
-    filled_qty: float = 0.0
-    avg_price: float = 0.0
+    filled_qty: float = Field(default=0.0, ge=0)
+    avg_price: float = Field(default=0.0, ge=0)
     timestamp: datetime = Field(default_factory=_utcnow)
     exchange: Exchange
     session_id: str = ""

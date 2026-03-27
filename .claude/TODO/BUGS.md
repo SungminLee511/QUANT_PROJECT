@@ -489,9 +489,9 @@ All HTTP calls have fixed timeouts, no retry, no exponential backoff, no 429 han
 
 **File:** `shared/market_calendar.py` — Lines 51–53 — New exchanges default to equity hours silently.
 
-### BUG-94: Pydantic models allow negative prices/volumes/quantities
+### ~~BUG-94: Pydantic models allow negative prices/volumes/quantities~~ ✅ FIXED
 
-**File:** `shared/schemas.py` — Multiple — No `Field(gt=0)` constraints.
+**Fixed in:** commit (BUG-94). Added `Field(gt=0)` for prices, `Field(ge=0)` for volumes/quantities on MarketTick, OHLCVBar, and OrderUpdate.
 
 ### BUG-95: Backtest `start_date`/`end_date` empty strings if no data
 
