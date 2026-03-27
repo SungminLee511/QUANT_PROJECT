@@ -521,9 +521,9 @@ All HTTP calls have fixed timeouts, no retry, no exponential backoff, no 429 han
 
 **Fixed in:** commit (BUG-101). Default `None` (not computable), `0.0` (zero return), `inf`/`-inf` (zero-vol positive/negative). `to_dict()` converts inf to ∞ for JSON.
 
-### BUG-102: Alpaca missing credentials silently skipped per fetch
+### ~~BUG-102: Alpaca missing credentials silently skipped per fetch~~ ✅ FIXED
 
-**File:** `data/sources/alpaca_source.py` — Lines 44–46 — Session runs with degraded data, no clear indication.
+**Fixed in:** commit (BUG-102). Constructor warns on init. Per-fetch warning fires once then suppresses via `_warned_no_creds` flag.
 
 ---
 

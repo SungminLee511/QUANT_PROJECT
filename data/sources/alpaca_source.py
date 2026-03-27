@@ -25,12 +25,15 @@ class AlpacaSource:
     def __init__(self, api_key: str = "", api_secret: str = ""):
         self.api_key = api_key
         self.api_secret = api_secret
+        self._warned_no_creds = False
         self._session = requests.Session()
         if api_key:
             self._session.headers.update({
                 "APCA-API-KEY-ID": api_key,
                 "APCA-API-SECRET-KEY": api_secret,
             })
+        else:
+            logger.warning("AlpacaSource initialized without API credentials — all fetches will return empty data")
 
     @property
     def has_credentials(self) -> bool:
@@ -42,7 +45,9 @@ class AlpacaSource:
         Returns empty dict if no API credentials.
         """
         if not self.has_credentials:
-            logger.warning("Alpaca API: no credentials configured, skipping fetch")
+            if not self._warned_no_creds:
+                logger.warning("Alpaca API: no credentials configured, skipping fetch (this warning will not repeat)")
+                self._warned_no_creds = True
             return {}
 
         fields_to_fetch = requested_fields & self.ALL_FIELDS
@@ -186,7 +191,9 @@ class AlpacaSource:
             Columns are oldest-first (left=oldest, right=most recent).
         """
         if not self.has_credentials:
-            logger.warning("Alpaca API: no credentials, skipping history backfill")
+            if not self._warned_no_creds:
+                logger.warning("Alpaca API: no credentials, skipping history backfill (this warning will not repeat)")
+                self._warned_no_creds = True
             return {}
 
         fields_to_fetch = requested_fields & self.ALL_FIELDS
