@@ -423,6 +423,13 @@ class DataCollector:
     def _append_to_buffer(self, field_name: str, values: np.ndarray) -> None:
         """Append new values to a rolling buffer by shifting left."""
         buf = self._buffers[field_name]
+        expected_rows = buf.shape[0]
+        if values.shape != (expected_rows,):
+            logger.error(
+                "Shape mismatch for field '%s': got %s, expected (%d,) — skipping append",
+                field_name, values.shape, expected_rows,
+            )
+            return
         # Shift left
         buf[:, :-1] = buf[:, 1:]
         # Write new values to last column
