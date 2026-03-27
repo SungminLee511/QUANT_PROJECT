@@ -124,17 +124,24 @@ class BinanceSource:
                 ask = float(asks_list[0][0]) if len(asks_list) > 0 and len(asks_list[0]) > 0 else 0.0
                 return symbol, bid, ask
 
+            failed_count = 0
             with ThreadPoolExecutor(max_workers=min(n, 10)) as pool:
                 futures = {pool.submit(_fetch_book, sym): sym for sym in symbols}
-                for future in as_completed(futures):
+                for future in as_completed(futures, timeout=15):
                     sym = futures[future]
                     try:
-                        _, bid, ask = future.result()
+                        _, bid, ask = future.result(timeout=5)
                         idx = sym_idx[sym]
                         bids[idx] = bid
                         asks[idx] = ask
                     except Exception:
-                        logger.warning("Binance order book fetch error for %s", sym)
+                        failed_count += 1
+                        logger.warning("Binance order book fetch error for %s", sym, exc_info=True)
+            if failed_count:
+                logger.warning(
+                    "Binance orderbook: %d/%d symbols failed — partial data returned",
+                    failed_count, n,
+                )
 
             if "bid" in fields_to_fetch:
                 result["bid"] = bids
