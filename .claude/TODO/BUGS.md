@@ -190,14 +190,9 @@
 
 ---
 
-### BUG-74: String-based kill switch auto-activation is fragile
+### ~~BUG-74: String-based kill switch auto-activation is fragile~~ ✅ FIXED
 
-**File:** `risk/manager.py` — Lines 114–116
-**Severity:** MEDIUM
-
-`if "drawdown" in result.reason.lower()` — relies on reason text containing specific substrings. Changing message text silently breaks auto-activation.
-
-**Fix:** Return structured check IDs, not string matching.
+**Fixed in:** BUG-74 commit. Added `check_id` field to `RiskCheckResult`. `_check_all()` sets structured IDs ("drawdown", "daily_loss", etc.). Kill switch activation now matches on `check_id in {"drawdown", "daily_loss"}` instead of fragile substring search.
 
 ---
 

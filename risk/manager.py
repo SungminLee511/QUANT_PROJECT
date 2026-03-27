@@ -112,8 +112,9 @@ class RiskManager:
                     ),
                 )
 
-                # Auto-activate kill switch on drawdown or daily loss breach
-                if "drawdown" in result.reason.lower() or "daily loss" in result.reason.lower():
+                # BUG-74: Use structured check_id instead of fragile string matching
+                _KILL_SWITCH_CHECKS = {"drawdown", "daily_loss"}
+                if result.check_id in _KILL_SWITCH_CHECKS:
                     await self._kill_switch.activate(result.reason)
 
         except Exception:
@@ -138,27 +139,27 @@ class RiskManager:
         # 1. Kill switch (async — reads Redis)
         approved, reason = await check_kill_switch(self._redis, self._config)
         if not approved:
-            return RiskCheckResult(approved=False, reason=reason, original_signal=signal)
+            return RiskCheckResult(approved=False, reason=reason, check_id="kill_switch", original_signal=signal)
 
         # 2. Drawdown check
         approved, reason = check_drawdown(self._portfolio_state, self._config)
         if not approved:
-            return RiskCheckResult(approved=False, reason=reason, original_signal=signal)
+            return RiskCheckResult(approved=False, reason=reason, check_id="drawdown", original_signal=signal)
 
         # 3. Daily loss check
         approved, reason = check_daily_loss(self._portfolio_state, self._config)
         if not approved:
-            return RiskCheckResult(approved=False, reason=reason, original_signal=signal)
+            return RiskCheckResult(approved=False, reason=reason, check_id="daily_loss", original_signal=signal)
 
         # 4. Max positions
         approved, reason = check_max_positions(signal, self._portfolio_state, self._config)
         if not approved:
-            return RiskCheckResult(approved=False, reason=reason, original_signal=signal)
+            return RiskCheckResult(approved=False, reason=reason, check_id="max_positions", original_signal=signal)
 
         # 5. Position size
         approved, reason = check_position_size(signal, self._portfolio_state, self._config)
         if not approved:
-            return RiskCheckResult(approved=False, reason=reason, original_signal=signal)
+            return RiskCheckResult(approved=False, reason=reason, check_id="position_size", original_signal=signal)
 
         return RiskCheckResult(approved=True, reason="All checks passed", original_signal=signal)
 

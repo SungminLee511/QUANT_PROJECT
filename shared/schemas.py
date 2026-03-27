@@ -121,6 +121,7 @@ class RiskCheckResult(BaseModel):
 
     approved: bool
     reason: str = ""
+    check_id: str = ""  # BUG-74: structured ID for the failing check (e.g. "drawdown", "daily_loss")
     original_signal: TradeSignal
 
 
