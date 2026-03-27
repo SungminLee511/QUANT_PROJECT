@@ -556,9 +556,9 @@ class SessionManager:
         if pipeline.sim_adapter is not None:
             balances = await pipeline.sim_adapter.get_balances()
             total_equity = balances.get("total_equity", starting_budget)
-            for sym, pos in pipeline.sim_adapter._positions.items():
+            pos_snap = await pipeline.sim_adapter.get_positions_snapshot()
+            for sym, pos in pos_snap.items():
                 qty = pos.get("quantity", 0)
-                # Include both long (> 0) and short (< 0) positions
                 if abs(qty) > 0.0001:
                     current_positions[sym] = qty
         else:
@@ -657,9 +657,9 @@ class SessionManager:
                 # Sim: read directly from the adapter that will execute the orders
                 balances = await pipeline.sim_adapter.get_balances()
                 total_equity = balances.get("total_equity", starting_budget)
-                for sym, pos in pipeline.sim_adapter._positions.items():
+                pos_snap = await pipeline.sim_adapter.get_positions_snapshot()
+                for sym, pos in pos_snap.items():
                     qty = pos.get("quantity", 0)
-                    # Include both long and short positions
                     if abs(qty) > 0.0001:
                         current_positions[sym] = qty
             elif state:

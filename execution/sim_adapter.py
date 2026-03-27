@@ -198,33 +198,43 @@ class SimulationAdapter(BaseExchangeAdapter):
         For short positions (negative qty), the position value is negative
         (qty * price < 0), which correctly reduces total equity.
         """
-        total_value = self._cash + sum(
-            pos["quantity"] * self._last_prices.get(sym, pos["avg_price"])
-            for sym, pos in self._positions.items()
-            if abs(pos["quantity"]) > 0.0001
-        )
-        return {
-            "cash": self._cash,
-            "total_equity": total_value,
-            "positions_value": total_value - self._cash,
-            "total_fees": self._total_fees,
-        }
+        async with self._lock:
+            total_value = self._cash + sum(
+                pos["quantity"] * self._last_prices.get(sym, pos["avg_price"])
+                for sym, pos in self._positions.items()
+                if abs(pos["quantity"]) > 0.0001
+            )
+            return {
+                "cash": self._cash,
+                "total_equity": total_value,
+                "positions_value": total_value - self._cash,
+                "total_fees": self._total_fees,
+            }
 
     async def get_positions(self) -> list:
         """Return simulated positions."""
-        return [
-            {
-                "symbol": sym,
-                "quantity": pos["quantity"],
-                "avg_entry_price": pos["avg_price"],
-                "current_price": self._last_prices.get(sym, pos["avg_price"]),
-                "unrealized_pnl": pos["quantity"] * (
-                    self._last_prices.get(sym, pos["avg_price"]) - pos["avg_price"]
-                ),
+        async with self._lock:
+            return [
+                {
+                    "symbol": sym,
+                    "quantity": pos["quantity"],
+                    "avg_entry_price": pos["avg_price"],
+                    "current_price": self._last_prices.get(sym, pos["avg_price"]),
+                    "unrealized_pnl": pos["quantity"] * (
+                        self._last_prices.get(sym, pos["avg_price"]) - pos["avg_price"]
+                    ),
+                }
+                for sym, pos in self._positions.items()
+                if abs(pos["quantity"]) > 0.0001
+            ]
+
+    async def get_positions_snapshot(self) -> dict[str, dict]:
+        """Return a thread-safe copy of positions dict for external reads."""
+        async with self._lock:
+            return {
+                sym: {"quantity": pos["quantity"], "avg_price": pos["avg_price"]}
+                for sym, pos in self._positions.items()
             }
-            for sym, pos in self._positions.items()
-            if abs(pos["quantity"]) > 0.0001
-        ]
 
     def get_last_price(self, symbol: str) -> float:
         """Get the last known price for a symbol."""
