@@ -299,7 +299,10 @@ class SessionManager:
                 pipeline, config_data, symbols, starting_budget,
                 strategy_code, data_config, custom_data_code,
             )
-            await self._set_session_status(session_id, "active")
+            try:
+                await self._set_session_status(session_id, "active")
+            except Exception:
+                logger.error("Session %s: pipeline started but DB status update failed", session_id, exc_info=True)
             await self._publish_log(
                 session_id, "session_event",
                 f"Session started (type={session_type.value}, symbols={symbols})",
@@ -880,7 +883,7 @@ class SessionManager:
             channel = session_channel(session_id, "logs")
             await self._redis.publish(channel, entry)
         except Exception:
-            logger.debug("Failed to publish session log", exc_info=True)
+            logger.warning("Failed to publish session log (session=%s, event=%s)", session_id, event_type, exc_info=True)
 
     # ── Helpers ──────────────────────────────────────────────────────
 
