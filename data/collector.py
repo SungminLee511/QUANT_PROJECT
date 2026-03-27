@@ -48,6 +48,11 @@ class DataCollector:
         calendar: object | None = None,
     ):
         self.session_id = session_id
+        if not symbols:
+            raise ValueError(
+                f"DataCollector: symbols list is empty (session={session_id}). "
+                "At least one symbol is required."
+            )
         self.symbols = symbols
         self.n_symbols = len(symbols)
         self.exchange = exchange
