@@ -306,12 +306,9 @@ Position updated in memory, then `_persist_position()` called but not awaited. C
 
 ---
 
-### BUG-72: Stale price fallback in equity calculations
+### ~~BUG-72: Stale price fallback in equity calculations~~ ✅ FIXED
 
-**File:** `portfolio/tracker.py` — Lines 218, 226, 236–237
-**Severity:** MEDIUM
-
-When `_prices` lacks a symbol, falls back to `avg_entry_price`. If market data feed stalls, equity freezes at entry price, risk checks use stale values.
+**Fixed in:** commit (BUG-72). Added `_get_price()` helper that logs a one-time warning per symbol when falling back to entry price. Warning clears when fresh price arrives, re-fires if price disappears again.
 
 ---
 

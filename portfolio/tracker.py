@@ -38,6 +38,7 @@ class PortfolioTracker:
         self._peak_equity: float = starting_cash
         self._day_start_equity: float = starting_cash
         self._prices: dict[str, float] = {}  # Latest prices per symbol
+        self._stale_price_warned: set[str] = set()  # Symbols warned about stale price
         # Track cumulative filled qty per order to compute deltas (BUG-16)
         self._last_filled: dict[str, float] = {}  # order_id -> last seen filled_qty
         # P&L tracking (BUG-27)
@@ -212,6 +213,20 @@ class PortfolioTracker:
         except Exception:
             logger.debug("Failed to parse market data update", exc_info=True)
 
+    def _get_price(self, symbol: str, fallback: float) -> float:
+        """Get current price, falling back to entry price with one-time warning."""
+        price = self._prices.get(symbol)
+        if price is not None:
+            self._stale_price_warned.discard(symbol)
+            return price
+        if symbol not in self._stale_price_warned:
+            logger.warning(
+                "No market price for %s — using entry price %.4f as fallback (session=%s)",
+                symbol, fallback, self._session_id,
+            )
+            self._stale_price_warned.add(symbol)
+        return fallback
+
     def get_total_equity(self) -> float:
         """Cash + sum of all position values at current prices.
 
@@ -219,7 +234,7 @@ class PortfolioTracker:
         Short positions contribute negative value to equity.
         """
         positions_value = sum(
-            pos["quantity"] * self._prices.get(symbol, pos["avg_entry_price"])
+            pos["quantity"] * self._get_price(symbol, pos["avg_entry_price"])
             for symbol, pos in self._positions.items()
             if abs(pos["quantity"]) > 0.0001
         )
@@ -227,7 +242,7 @@ class PortfolioTracker:
 
     def get_positions_value(self) -> float:
         return sum(
-            pos["quantity"] * self._prices.get(symbol, pos["avg_entry_price"])
+            pos["quantity"] * self._get_price(symbol, pos["avg_entry_price"])
             for symbol, pos in self._positions.items()
             if abs(pos["quantity"]) > 0.0001
         )
@@ -236,9 +251,9 @@ class PortfolioTracker:
         return {
             symbol: {
                 **pos,
-                "current_price": self._prices.get(symbol, pos["avg_entry_price"]),
+                "current_price": self._get_price(symbol, pos["avg_entry_price"]),
                 "unrealized_pnl": pos["quantity"] * (
-                    self._prices.get(symbol, pos["avg_entry_price"]) - pos["avg_entry_price"]
+                    self._get_price(symbol, pos["avg_entry_price"]) - pos["avg_entry_price"]
                 ),
             }
             for symbol, pos in self._positions.items()
@@ -324,7 +339,7 @@ class PortfolioTracker:
                 result = await session.execute(stmt)
                 existing = result.scalar_one_or_none()
 
-                current_price = self._prices.get(symbol, pos["avg_entry_price"])
+                current_price = self._get_price(symbol, pos["avg_entry_price"])
                 unrealized = pos["quantity"] * (current_price - pos["avg_entry_price"])
 
                 if existing:
