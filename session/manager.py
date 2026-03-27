@@ -294,8 +294,10 @@ class SessionManager:
             for task in pipeline.tasks:
                 try:
                     await task
-                except (asyncio.CancelledError, Exception):
+                except asyncio.CancelledError:
                     pass
+                except Exception:
+                    logger.warning("Error during task cleanup for session %s", session_id, exc_info=True)
             self._pipelines.pop(session_id, None)
             await self._set_session_status(session_id, "error")
             await self._publish_log(session_id, "session_event", "Session failed to start", level="error")
@@ -325,7 +327,7 @@ class SessionManager:
             except asyncio.CancelledError:
                 pass
             except Exception:
-                logger.debug("Error awaiting task cancellation for session %s", session_id, exc_info=True)
+                logger.warning("Error awaiting task cancellation for session %s", session_id, exc_info=True)
 
         self._pipelines.pop(session_id, None)
         await self._set_session_status(session_id, "stopped")
