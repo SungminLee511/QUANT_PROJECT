@@ -107,14 +107,20 @@ class AlpacaAdapter(BaseExchangeAdapter):
             "pending_new": OrderStatus.PENDING,
         }
 
+        filled_qty = float(order.filled_qty) if order.filled_qty else 0.0
+        avg_price = float(order.filled_avg_price) if order.filled_avg_price else 0.0
+        # Only report avg_price when there's actually a fill
+        if filled_qty <= 0:
+            avg_price = 0.0
+
         return OrderUpdate(
             order_id=external_order_id,
             external_id=external_order_id,
             symbol=order.symbol,
             side=Side.BUY if str(order.side) == "buy" else Side.SELL,
             status=status_map.get(str(order.status), OrderStatus.PENDING),
-            filled_qty=float(order.filled_qty or 0),
-            avg_price=float(order.filled_avg_price or 0),
+            filled_qty=filled_qty,
+            avg_price=avg_price,
             exchange=Exchange.ALPACA,
         )
 
