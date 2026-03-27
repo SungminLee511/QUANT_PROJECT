@@ -635,7 +635,7 @@ def run_backtest(
             for fname in fields:
                 col = col_to_field.get(fname)
                 if col and col in row:
-                    val = float(row[col]) if pd.notna(row[col]) else 0.0
+                    val = float(row[col]) if pd.notna(row[col]) else np.nan
                     bar_values[fname][idx] = val
 
             # VWAP approximation (HLC/3) if requested
@@ -660,6 +660,7 @@ def run_backtest(
             prev_close[idx] = price
 
         # Fill NaN with previous values; keep NaN if no prior data (BUG-25 fix)
+        nan_symbols: list[str] = []
         for fname in fields:
             vals = bar_values[fname]
             for i in range(n_symbols):
@@ -669,6 +670,15 @@ def run_backtest(
                         prev_val = buffers[fname][i, -1]
                         if not np.isnan(prev_val):
                             vals[i] = prev_val
+                        elif fname == "price":
+                            nan_symbols.append(symbols[i])
+                    elif fname == "price":
+                        nan_symbols.append(symbols[i])
+        if nan_symbols:
+            logger.warning(
+                "Backtest bar %s: missing price data for %s (NaN, no forward-fill available)",
+                date_str, ", ".join(sorted(set(nan_symbols))),
+            )
 
         # Append to rolling buffers
         for fname in fields:

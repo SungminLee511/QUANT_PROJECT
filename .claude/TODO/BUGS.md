@@ -457,12 +457,9 @@ All HTTP calls have fixed timeouts, no retry, no exponential backoff, no 429 han
 
 ---
 
-### BUG-88: Backtest NaN handling silently skips symbols
+### ~~BUG-88: Backtest NaN handling silently skips symbols~~ ✅ FIXED
 
-**File:** `backtest/engine.py` — Lines 620–639, 664–670
-**Severity:** MEDIUM
-
-If buffer is empty and NaN fill fails, symbol remains NaN silently. No warning about missing data for specific symbols.
+**Fixed in:** commit (BUG-88). Changed missing data default from `0.0` to `np.nan`. Added per-bar warning when symbols have NaN price with no forward-fill available, listing affected symbols by name.
 
 ---
 
