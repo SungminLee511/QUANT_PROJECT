@@ -218,7 +218,13 @@ class YFinanceSource:
             "1min": "1m", "5min": "5m", "15min": "15m",
             "30min": "30m", "60min": "60m", "1day": "1d",
         }
-        interval = res_map.get(resolution, "1d")
+        if resolution not in res_map:
+            logger.error(
+                "Unsupported resolution '%s' for yfinance history. Supported: %s",
+                resolution, list(res_map.keys()),
+            )
+            return {}
+        interval = res_map[resolution]
 
         # Choose a generous period to ensure we get enough bars
         period_map = {
