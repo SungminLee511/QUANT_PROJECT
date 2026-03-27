@@ -179,10 +179,10 @@
                     <select id="dcScheduleMode">
                         <option value="always_on">Always On (24/7)</option>
                         <option value="market_hours_only">Market Hours Only</option>
-                        <option value="close_only">Close Only (EOD rebalance)</option>
+                        <option value="market_hours_liquidate">Market Hours + Liquidate at Close</option>
                     </select>
                 </div>
-                <div class="dc-hint">Market Hours / Close Only apply to US stock sessions. Crypto is always 24/7.</div>
+                <div class="dc-hint">Liquidate mode flattens all positions 5 min before market close. Applies to US stock sessions only.</div>
                 <div class="dc-row">
                     <label>Sim Commission %</label>
                     <select id="dcCommissionPct">
@@ -194,6 +194,18 @@
                     </select>
                 </div>
                 <div class="dc-hint">Applied to every trade in simulation &amp; backtest. Real sessions use actual broker fees.</div>
+                <div class="dc-row">
+                    <label>Daily Loss Kill Switch</label>
+                    <select id="dcMaxDailyLoss">
+                        <option value="0">Off</option>
+                        <option value="0.01">1%</option>
+                        <option value="0.02">2%</option>
+                        <option value="0.03" selected>3% (default)</option>
+                        <option value="0.05">5%</option>
+                        <option value="0.10">10%</option>
+                    </select>
+                </div>
+                <div class="dc-hint">Liquidate all positions if daily P&amp;L loss exceeds this % of equity. "Off" disables the check.</div>
             </div>
 
             <div id="dcSourceWarning" class="dc-warning"></div>
@@ -285,6 +297,13 @@ def main(data: dict) -> np.ndarray:
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
 <script>
+    // ── XSS helpers ──────────────────────────────────────
+    function escHtml(s) {
+        const d = document.createElement('div');
+        d.textContent = String(s ?? '');
+        return d.innerHTML;
+    }
+
     // ── State ─────────────────────────────────────────────
     let strategyEditor;
     let customEditors = [];  // {name, type, editor, element}
@@ -397,7 +416,7 @@ def main(data: dict) -> np.ndarray:
 
         const enabled = cfg.enabled || false;
         const lookback = cfg.lookback || f.defaultLookback;
-        const source = cfg.source || sources[0];
+        const source = (cfg.source && sources.includes(cfg.source)) ? cfg.source : sources[0];
 
         let sourceHtml;
         if (sources.length === 1) {
@@ -493,7 +512,7 @@ def main(data: dict) -> np.ndarray:
         });
         if (enabledSources.size >= 2) {
             const sourceList = Array.from(enabledSources).join(', ');
-            warning.innerHTML = `&#9888; Multiple data sources selected (${sourceList}) &mdash; this may increase scrape latency.`;
+            warning.innerHTML = `&#9888; Multiple data sources selected (${escHtml(sourceList)}) &mdash; this may increase scrape latency.`;
             warning.classList.add('visible');
         } else {
             warning.classList.remove('visible');
@@ -522,15 +541,18 @@ def main(data: dict) -> np.ndarray:
         document.getElementById('shortLossHint').style.display = isLongShort ? 'block' : 'none';
     }
 
+    let _sessionType = '';  // set by loadEditorData or sidebar
+
     function isCryptoSession() {
-        // Check current session type from sidebar
+        // 1. Use session type set from API response
+        if (_sessionType) return _sessionType.startsWith('binance');
+        // 2. Fallback: read data attribute from sidebar
         const item = document.querySelector(`.session-item.active`);
-        if (!item) return true;
-        const typeBadge = item.querySelector('.s-type');
-        if (!typeBadge) return true;
-        return typeBadge.textContent.trim() === 'SIM'
-            ? item.querySelector('.s-meta').textContent.includes('binance')
-            : typeBadge.classList.contains('sim') || true;  // default show all
+        if (item && item.dataset.sessionType) {
+            return item.dataset.sessionType.startsWith('binance');
+        }
+        // 3. No session selected — default to stock
+        return false;
     }
 
     function getDataConfigFromUI() {
@@ -539,6 +561,7 @@ def main(data: dict) -> np.ndarray:
             exec_every_n: parseInt(document.getElementById('dcExecEveryN').value) || 1,
             strategy_mode: document.getElementById('dcStrategyMode').value,
             short_loss_limit_pct: parseFloat(document.getElementById('dcShortLossLimit').value) || 1.0,
+            max_daily_loss_pct: parseFloat(document.getElementById('dcMaxDailyLoss').value),
             schedule_mode: document.getElementById('dcScheduleMode').value,
             commission_pct: parseFloat(document.getElementById('dcCommissionPct').value) || 0.0,
             fields: {},
@@ -582,16 +605,16 @@ def main(data: dict) -> np.ndarray:
         block.className = 'cd-block';
         block.innerHTML = `
             <div class="cd-header">
-                <input type="text" placeholder="Data name (e.g. put_call_ratio)" value="${name}" data-idx="${idx}" class="cd-name">
+                <input type="text" placeholder="Data name (e.g. put_call_ratio)" value="${escHtml(name)}" data-idx="${idx}" class="cd-name">
                 <select data-idx="${idx}" class="cd-type">
                     <option value="per_stock" ${type === 'per_stock' ? 'selected' : ''}>Per-Stock</option>
                     <option value="global" ${type === 'global' ? 'selected' : ''}>Global</option>
                 </select>
                 <label style="font-size:11px;color:#8b949e;">Lookback:</label>
-                <input type="number" value="${lookback}" min="1" max="500" style="width:55px;padding:4px 6px;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#e1e4e8;font-size:12px;" data-idx="${idx}" class="cd-lookback">
-                <button class="cd-remove" onclick="removeCustomDataBlock(${idx})" title="Remove">&times;</button>
+                <input type="number" value="${escHtml(lookback)}" min="1" max="500" style="width:55px;padding:4px 6px;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#e1e4e8;font-size:12px;" data-idx="${idx}" class="cd-lookback">
+                <button class="cd-remove" onclick="removeCustomDataBlock(${parseInt(idx)})" title="Remove">&times;</button>
             </div>
-            <div class="cd-editor" id="cd-editor-${idx}"></div>
+            <div class="cd-editor" id="cd-editor-${parseInt(idx)}"></div>
         `;
         container.appendChild(block);
 
@@ -652,13 +675,13 @@ def main(data: dict) -> np.ndarray:
         const fb = document.getElementById('feedback');
         if (!lines || lines.length === 0) { fb.style.display = 'none'; return; }
         fb.style.display = 'block';
-        fb.innerHTML = lines.join('');
+        fb.innerHTML = lines.map(l => escHtml(l)).join('<br>');
     }
 
     function updateEditorLabel() {
         const label = document.getElementById('sessionLabel');
         if (currentSessionId) {
-            const item = document.querySelector(`.session-item[data-id="${currentSessionId}"] .s-name`);
+            const item = document.querySelector(`.session-item[data-id="${CSS.escape(currentSessionId)}"] .s-name`);
             const name = item ? item.firstChild.textContent.trim() : currentSessionId;
             document.getElementById('editorSessionName').textContent = name;
             label.style.display = 'inline';
@@ -674,6 +697,9 @@ def main(data: dict) -> np.ndarray:
             const res = await fetch('/editor/api/load' + q);
             const data = await res.json();
 
+            // Session type (for crypto vs stock source detection)
+            _sessionType = data.session_type || '';
+
             // Strategy code
             strategyEditor.setValue(data.strategy_code || '');
 
@@ -683,6 +709,7 @@ def main(data: dict) -> np.ndarray:
             document.getElementById('dcExecEveryN').value = dataConfig.exec_every_n || 1;
             document.getElementById('dcStrategyMode').value = dataConfig.strategy_mode || 'rebalance';
             document.getElementById('dcShortLossLimit').value = String(dataConfig.short_loss_limit_pct || 1.0);
+            document.getElementById('dcMaxDailyLoss').value = String(dataConfig.max_daily_loss_pct != null ? dataConfig.max_daily_loss_pct : 0.03);
             document.getElementById('dcScheduleMode').value = dataConfig.schedule_mode || 'always_on';
             document.getElementById('dcCommissionPct').value = String(dataConfig.commission_pct || 0);
             onStrategyModeChange();
@@ -816,6 +843,7 @@ def main(data: dict) -> np.ndarray:
             document.getElementById('dcExecEveryN').value = dataConfig.exec_every_n || 1;
             document.getElementById('dcStrategyMode').value = dataConfig.strategy_mode || 'rebalance';
             document.getElementById('dcShortLossLimit').value = String(dataConfig.short_loss_limit_pct || 1.0);
+            document.getElementById('dcMaxDailyLoss').value = String(dataConfig.max_daily_loss_pct != null ? dataConfig.max_daily_loss_pct : 0.03);
             document.getElementById('dcScheduleMode').value = dataConfig.schedule_mode || 'always_on';
             document.getElementById('dcCommissionPct').value = String(dataConfig.commission_pct || 0);
             onStrategyModeChange();
@@ -832,6 +860,9 @@ def main(data: dict) -> np.ndarray:
 
     // Called by base.html when session changes
     function onSessionChange(sessionId) {
+        // Update session type from sidebar data attribute
+        const item = sessionId ? document.querySelector(`.session-item[data-id="${sessionId}"]`) : null;
+        _sessionType = item ? (item.dataset.sessionType || '') : '';
         updateEditorLabel();
         loadEditorData();
     }
@@ -844,22 +875,22 @@ def main(data: dict) -> np.ndarray:
         resolution: "1min",
         exec_every_n: 1,
         fields: {
-            price: { enabled: true, lookback: 20, source: "yfinance" },
-            bid: { enabled: false, lookback: 5, source: "alpaca" },
-            ask: { enabled: false, lookback: 5, source: "alpaca" },
-            spread: { enabled: false, lookback: 5, source: "alpaca" },
-            num_trades: { enabled: false, lookback: 5, source: "binance" },
-            open: { enabled: false, lookback: 10, source: "yfinance" },
-            high: { enabled: false, lookback: 10, source: "yfinance" },
-            low: { enabled: false, lookback: 10, source: "yfinance" },
-            close: { enabled: false, lookback: 10, source: "yfinance" },
-            volume: { enabled: true, lookback: 10, source: "yfinance" },
-            vwap: { enabled: false, lookback: 5, source: "alpaca" },
-            day_change_pct: { enabled: false, lookback: 5, source: "yfinance" },
-            market_cap: { enabled: false, lookback: 5, source: "yfinance" },
-            pe_ratio: { enabled: false, lookback: 5, source: "yfinance" },
-            week52_high: { enabled: false, lookback: 5, source: "yfinance" },
-            week52_low: { enabled: false, lookback: 5, source: "yfinance" },
+            price: { enabled: true, lookback: 20 },
+            bid: { enabled: false, lookback: 5 },
+            ask: { enabled: false, lookback: 5 },
+            spread: { enabled: false, lookback: 5 },
+            num_trades: { enabled: false, lookback: 5 },
+            open: { enabled: false, lookback: 10 },
+            high: { enabled: false, lookback: 10 },
+            low: { enabled: false, lookback: 10 },
+            close: { enabled: false, lookback: 10 },
+            volume: { enabled: true, lookback: 10 },
+            vwap: { enabled: false, lookback: 5 },
+            day_change_pct: { enabled: false, lookback: 5 },
+            market_cap: { enabled: false, lookback: 5 },
+            pe_ratio: { enabled: false, lookback: 5 },
+            week52_high: { enabled: false, lookback: 5 },
+            week52_low: { enabled: false, lookback: 5 },
         },
     };
     dataConfig = defaultDataConfig;
