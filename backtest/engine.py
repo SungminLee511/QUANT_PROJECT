@@ -54,8 +54,8 @@ class BacktestMetrics:
     losing_trades: int = 0
     avg_win_pct: float = 0.0
     avg_loss_pct: float = 0.0
-    start_date: str = ""
-    end_date: str = ""
+    start_date: str = "N/A"
+    end_date: str = "N/A"
     trading_days: int = 0
     total_fees: float = 0.0
     fees_pct: float = 0.0
@@ -411,6 +411,10 @@ def _compute_metrics(
     metrics.fees_pct = round(total_fees / starting_cash * 100, 2) if starting_cash > 0 else 0.0
 
     if len(equity_curve) < 2:
+        if len(equity_curve) == 1:
+            metrics.start_date = equity_curve[0].get("date", "N/A")
+            metrics.end_date = metrics.start_date
+            metrics.trading_days = 1
         return metrics
 
     equities = [pt["equity"] for pt in equity_curve]

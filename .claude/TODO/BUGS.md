@@ -493,9 +493,9 @@ All HTTP calls have fixed timeouts, no retry, no exponential backoff, no 429 han
 
 **Fixed in:** commit (BUG-94). Added `Field(gt=0)` for prices, `Field(ge=0)` for volumes/quantities on MarketTick, OHLCVBar, and OrderUpdate.
 
-### BUG-95: Backtest `start_date`/`end_date` empty strings if no data
+### ~~BUG-95: Backtest `start_date`/`end_date` empty strings if no data~~ ✅ FIXED
 
-**File:** `backtest/engine.py` — Lines 416–420 — Should use "N/A" or raise.
+**Fixed in:** commit (BUG-95). Default changed from `""` to `"N/A"`. Single-point curves now set both dates. Empty curves retain `"N/A"`.
 
 ### BUG-96: Default strategy path not validated at module load
 
