@@ -213,11 +213,15 @@ class PortfolioTracker:
             logger.debug("Failed to parse market data update", exc_info=True)
 
     def get_total_equity(self) -> float:
-        """Cash + sum of all position values at current prices."""
+        """Cash + sum of all position values at current prices.
+
+        Includes both long (positive qty) and short (negative qty) positions.
+        Short positions contribute negative value to equity.
+        """
         positions_value = sum(
             pos["quantity"] * self._prices.get(symbol, pos["avg_entry_price"])
             for symbol, pos in self._positions.items()
-            if pos["quantity"] > 0
+            if abs(pos["quantity"]) > 0.0001
         )
         return self._cash + positions_value
 
@@ -225,7 +229,7 @@ class PortfolioTracker:
         return sum(
             pos["quantity"] * self._prices.get(symbol, pos["avg_entry_price"])
             for symbol, pos in self._positions.items()
-            if pos["quantity"] > 0
+            if abs(pos["quantity"]) > 0.0001
         )
 
     def get_all_positions(self) -> dict:
@@ -238,7 +242,7 @@ class PortfolioTracker:
                 ),
             }
             for symbol, pos in self._positions.items()
-            if pos["quantity"] > 0
+            if abs(pos["quantity"]) > 0.0001
         }
 
     async def _publish_state_loop(self) -> None:
@@ -260,15 +264,21 @@ class PortfolioTracker:
                     "total_closed_trades": pnl_summary["total_trades"],
                     "win_rate": pnl_summary["win_rate"],
                     "open_positions": sum(
-                        1 for p in self._positions.values() if p["quantity"] > 0
+                        1 for p in self._positions.values() if abs(p["quantity"]) > 0.0001
                     ),
                     "positions": [
-                        {"symbol": s, "quantity": p["quantity"], "avg_entry_price": p["avg_entry_price"]}
+                        {
+                            "symbol": s,
+                            "quantity": p["quantity"],
+                            "avg_entry_price": p["avg_entry_price"],
+                            "current_price": self._prices.get(s, 0.0),
+                            "unrealized_pnl": p["quantity"] * (self._prices.get(s, p["avg_entry_price"]) - p["avg_entry_price"]),
+                        }
                         for s, p in self._positions.items()
-                        if p["quantity"] > 0
+                        if abs(p["quantity"]) > 0.0001
                     ],
                     "position_symbols": [
-                        s for s, p in self._positions.items() if p["quantity"] > 0
+                        s for s, p in self._positions.items() if abs(p["quantity"]) > 0.0001
                     ],
                     "prices": self._prices,
                 }
