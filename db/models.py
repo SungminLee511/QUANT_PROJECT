@@ -168,6 +168,10 @@ class EquitySnapshot(Base):
 
     session: Mapped["TradingSession"] = relationship(back_populates="equity_snapshots")
 
+    __table_args__ = (
+        UniqueConstraint("session_id", "timestamp", name="uq_equity_session_timestamp"),
+    )
+
 
 class AlertLog(Base):
     __tablename__ = "alert_logs"

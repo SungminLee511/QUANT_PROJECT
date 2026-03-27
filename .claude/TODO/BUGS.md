@@ -477,9 +477,9 @@ All HTTP calls have fixed timeouts, no retry, no exponential backoff, no 429 han
 
 ## LOW
 
-### BUG-91: `EquitySnapshot` model allows duplicate snapshots
+### ~~BUG-91: `EquitySnapshot` model allows duplicate snapshots~~ ✅ FIXED
 
-**File:** `db/models.py` — Lines 148–168 — No unique constraint on `(session_id, timestamp)`.
+**Fixed in:** commit (BUG-91). Added `UniqueConstraint("session_id", "timestamp")` to EquitySnapshot model + Alembic migration 003.
 
 ### BUG-92: Backtest equity curve rounded to 2 decimals
 
