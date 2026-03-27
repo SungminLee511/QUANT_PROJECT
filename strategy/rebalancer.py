@@ -58,9 +58,20 @@ class WeightRebalancer:
             )
             return orders
 
+        if total_equity <= 0:
+            logger.error(
+                "Session %s: total_equity=%.4f is non-positive — skipping rebalance",
+                self.session_id, total_equity,
+            )
+            return orders
+
         for i, symbol in enumerate(self.symbols):
             price = current_prices[i]
             if price <= 0:
+                logger.warning(
+                    "Session %s: skipping %s — price %.6f is non-positive",
+                    self.session_id, symbol, price,
+                )
                 continue
 
             # Target value for this stock
