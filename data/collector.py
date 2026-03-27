@@ -14,7 +14,7 @@ from typing import Callable, Optional
 import numpy as np
 
 from shared.enums import DataResolution, Exchange
-from data.sources import FIELD_MAP, DataSource, get_default_source
+from data.sources import FIELD_MAP, DataSource, get_default_source, validate_source
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +68,11 @@ class DataCollector:
             if isinstance(field_cfg, dict):
                 if field_cfg.get("enabled") and field_cfg.get("lookback", 0) > 0:
                     self.fields[field_name] = field_cfg["lookback"]
-                    self._field_sources[field_name] = field_cfg.get(
-                        "source", get_default_source(field_name, self._is_crypto)
+                    raw_source = field_cfg.get("source", "")
+                    self._field_sources[field_name] = (
+                        validate_source(field_name, raw_source, self._is_crypto)
+                        if raw_source
+                        else get_default_source(field_name, self._is_crypto)
                     )
             elif isinstance(field_cfg, int) and field_cfg > 0:
                 self.fields[field_name] = field_cfg
@@ -245,6 +248,7 @@ class DataCollector:
             return
 
         backfilled_count = 0
+        failed_sources: list[str] = []
         resolution_str = self.resolution.value
 
         for source_name, field_set in source_fields.items():
@@ -290,15 +294,24 @@ class DataCollector:
                     backfilled_count += 1
 
             except Exception:
-                logger.warning(
-                    "Backfill failed for source '%s' (session=%s) — "
-                    "live loop will fill buffers naturally",
+                failed_sources.append(source_name)
+                logger.error(
+                    "Backfill FAILED for source '%s' (session=%s) — "
+                    "live loop will fill buffers naturally, strategy execution "
+                    "delayed until min lookback reached",
                     source_name, self.session_id, exc_info=True,
                 )
 
+        if failed_sources:
+            logger.warning(
+                "Backfill incomplete: %d source(s) failed (%s) — "
+                "buffers may be empty (session=%s)",
+                len(failed_sources), failed_sources, self.session_id,
+            )
+
         logger.info(
-            "Backfill complete: %d fields pre-filled (session=%s)",
-            backfilled_count, self.session_id,
+            "Backfill complete: %d fields pre-filled, %d sources failed (session=%s)",
+            backfilled_count, len(failed_sources), self.session_id,
         )
 
     async def _collection_loop(self) -> None:
