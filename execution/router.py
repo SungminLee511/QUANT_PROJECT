@@ -76,97 +76,101 @@ class OrderRouter:
         logger.info("Order router stopped (session=%s)", self._session_id)
 
     async def _on_order_request(self, data: dict) -> None:
-        """Handle an incoming OrderRequest."""
+        """Handle an incoming OrderRequest (with 30s timeout)."""
         try:
-            request = OrderRequest.model_validate(data)
-            order_id = str(uuid.uuid4())
-
-            # Create local order state
-            order = OrderState(
-                order_id=order_id,
-                symbol=request.symbol,
-                side=request.side,
-                quantity=request.quantity,
-                order_type=request.order_type,
-                exchange=request.exchange,
-                strategy_id=request.strategy_id,
-            )
-
-            # Route to the correct adapter
-            adapter = self._get_adapter(request.exchange)
-            if adapter is None:
-                logger.error("No adapter for exchange %s (session=%s)", request.exchange.value, self._session_id)
-                order.transition(OrderStatus.FAILED)
-                return
-
-            # Place order
-            try:
-                external_id = await adapter.place_order(request)
-                order.external_id = external_id
-
-                # Sim adapter fills instantly — go straight to FILLED
-                if self._sim_adapter is not None:
-                    order.transition(OrderStatus.PLACED)
-                    order.transition(OrderStatus.FILLED)
-                    sim_status = await adapter.get_order_status(external_id)
-                    order.filled_quantity = sim_status.filled_qty
-                    order.avg_price = sim_status.avg_price
-                else:
-                    order.transition(OrderStatus.PLACED)
-            except Exception:
-                logger.exception("Failed to place order %s (session=%s)", order_id, self._session_id)
-                order.transition(OrderStatus.FAILED)
-                # Persist the failed order so it's visible in the DB/dashboard
-                self._open_orders[order_id] = order
-                await self._persist_order(order)
-                await self._publish_log(
-                    "order_failed", request.symbol,
-                    f"FAILED {request.side.value.upper()} {request.symbol} qty={request.quantity:.6f}",
-                    level="error",
-                    metadata={"side": request.side.value, "quantity": request.quantity, "order_id": order_id},
-                )
-                return
-
-            # Track and persist
-            self._open_orders[order_id] = order
-            await self._persist_order(order)
-
-            # Publish update
-            update = OrderUpdate(
-                order_id=order_id,
-                external_id=external_id,
-                symbol=request.symbol,
-                side=request.side,
-                status=order.status,
-                filled_qty=order.filled_quantity,
-                avg_price=order.avg_price,
-                exchange=request.exchange,
-                session_id=self._session_id,
-            )
-            await self._redis.publish(self._update_channel, update)
-
-            # Log based on actual status
-            if order.status == OrderStatus.FILLED:
-                await self._publish_log(
-                    "order_fill", request.symbol,
-                    f"FILLED {request.side.value.upper()} {request.symbol} qty={order.filled_quantity:.6f} @ ${order.avg_price:.2f}",
-                    metadata={
-                        "side": request.side.value, "quantity": order.filled_quantity,
-                        "price": order.avg_price, "order_id": order_id,
-                    },
-                )
-            else:
-                await self._publish_log(
-                    "order_placed", request.symbol,
-                    f"PLACED {request.side.value.upper()} {request.symbol} qty={request.quantity:.6f}",
-                    metadata={
-                        "side": request.side.value, "quantity": request.quantity,
-                        "order_id": order_id,
-                    },
-                )
-
+            await asyncio.wait_for(self._process_order_request(data), timeout=30)
+        except asyncio.TimeoutError:
+            logger.error("Order request timed out after 30s (session=%s)", self._session_id)
         except Exception:
             logger.exception("Error processing order request (session=%s)", self._session_id)
+
+    async def _process_order_request(self, data: dict) -> None:
+        """Inner order processing logic."""
+        request = OrderRequest.model_validate(data)
+        order_id = str(uuid.uuid4())
+
+        # Create local order state
+        order = OrderState(
+            order_id=order_id,
+            symbol=request.symbol,
+            side=request.side,
+            quantity=request.quantity,
+            order_type=request.order_type,
+            exchange=request.exchange,
+            strategy_id=request.strategy_id,
+        )
+
+        # Route to the correct adapter
+        adapter = self._get_adapter(request.exchange)
+        if adapter is None:
+            logger.error("No adapter for exchange %s (session=%s)", request.exchange.value, self._session_id)
+            order.transition(OrderStatus.FAILED)
+            return
+
+        # Place order
+        try:
+            external_id = await adapter.place_order(request)
+            order.external_id = external_id
+
+            # Sim adapter fills instantly — go straight to FILLED
+            if self._sim_adapter is not None:
+                order.transition(OrderStatus.PLACED)
+                order.transition(OrderStatus.FILLED)
+                sim_status = await adapter.get_order_status(external_id)
+                order.filled_quantity = sim_status.filled_qty
+                order.avg_price = sim_status.avg_price
+            else:
+                order.transition(OrderStatus.PLACED)
+        except Exception:
+            logger.exception("Failed to place order %s (session=%s)", order_id, self._session_id)
+            order.transition(OrderStatus.FAILED)
+            self._open_orders[order_id] = order
+            await self._persist_order(order)
+            await self._publish_log(
+                "order_failed", request.symbol,
+                f"FAILED {request.side.value.upper()} {request.symbol} qty={request.quantity:.6f}",
+                level="error",
+                metadata={"side": request.side.value, "quantity": request.quantity, "order_id": order_id},
+            )
+            return
+
+        # Track and persist
+        self._open_orders[order_id] = order
+        await self._persist_order(order)
+
+        # Publish update
+        update = OrderUpdate(
+            order_id=order_id,
+            external_id=external_id,
+            symbol=request.symbol,
+            side=request.side,
+            status=order.status,
+            filled_qty=order.filled_quantity,
+            avg_price=order.avg_price,
+            exchange=request.exchange,
+            session_id=self._session_id,
+        )
+        await self._redis.publish(self._update_channel, update)
+
+        # Log based on actual status
+        if order.status == OrderStatus.FILLED:
+            await self._publish_log(
+                "order_fill", request.symbol,
+                f"FILLED {request.side.value.upper()} {request.symbol} qty={order.filled_quantity:.6f} @ ${order.avg_price:.2f}",
+                metadata={
+                    "side": request.side.value, "quantity": order.filled_quantity,
+                    "price": order.avg_price, "order_id": order_id,
+                },
+            )
+        else:
+            await self._publish_log(
+                "order_placed", request.symbol,
+                f"PLACED {request.side.value.upper()} {request.symbol} qty={request.quantity:.6f}",
+                metadata={
+                    "side": request.side.value, "quantity": request.quantity,
+                    "order_id": order_id,
+                },
+            )
 
     async def _publish_log(self, event_type: str, symbol: str, message: str,
                           level: str = "info", metadata: dict | None = None) -> None:
