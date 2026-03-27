@@ -19,7 +19,7 @@ _ET = ZoneInfo("America/New_York")
 _MARKET_OPEN = time(9, 30)   # 9:30 AM ET
 _MARKET_CLOSE = time(16, 0)  # 4:00 PM ET
 
-# NYSE holidays for 2025-2027 (major ones — covers current usage)
+# NYSE holidays for 2025-2030 (major ones — covers current usage)
 # Format: (month, day). Some move year-to-year; these are approximate.
 # For exact dates, can later fetch from Alpaca API: GET /v2/calendar
 _NYSE_HOLIDAYS: dict[int, set[tuple[int, int]]] = {
@@ -35,7 +35,20 @@ _NYSE_HOLIDAYS: dict[int, set[tuple[int, int]]] = {
         (1, 1), (1, 18), (2, 15), (3, 26), (5, 31),
         (6, 18), (7, 5), (9, 6), (11, 25), (12, 24),
     },
+    2028: {
+        (1, 17), (2, 21), (4, 14), (5, 29),
+        (6, 19), (7, 4), (9, 4), (11, 23), (12, 25),
+    },
+    2029: {
+        (1, 1), (1, 15), (2, 19), (3, 30), (5, 28),
+        (6, 19), (7, 4), (9, 3), (11, 22), (12, 25),
+    },
+    2030: {
+        (1, 1), (1, 21), (2, 18), (4, 19), (5, 27),
+        (6, 19), (7, 4), (9, 2), (11, 28), (12, 25),
+    },
 }
+_WARNED_YEARS: set[int] = set()
 
 
 class MarketCalendar:
@@ -69,7 +82,15 @@ class MarketCalendar:
             return False
 
         # Holiday check
-        year_holidays = _NYSE_HOLIDAYS.get(dt_et.year, set())
+        year = dt_et.year
+        if year not in _NYSE_HOLIDAYS and year not in _WARNED_YEARS:
+            logger.warning(
+                "No NYSE holiday data for year %d — holiday checks will be skipped. "
+                "Update _NYSE_HOLIDAYS in shared/market_calendar.py.",
+                year,
+            )
+            _WARNED_YEARS.add(year)
+        year_holidays = _NYSE_HOLIDAYS.get(year, set())
         if (dt_et.month, dt_et.day) in year_holidays:
             return False
 
