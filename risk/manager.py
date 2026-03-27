@@ -198,11 +198,18 @@ class RiskManager:
             state = await self._redis.get_flag(state_key)
             if state:
                 self._portfolio_state.update(state)
-                # Convert position_symbols back to a set
-                if "position_symbols" in self._portfolio_state:
-                    self._portfolio_state["position_symbols"] = set(
-                        self._portfolio_state["position_symbols"]
+                # Convert position_symbols back to a set (Redis returns lists)
+                raw_syms = self._portfolio_state.get("position_symbols")
+                if isinstance(raw_syms, (list, set, tuple)):
+                    self._portfolio_state["position_symbols"] = set(raw_syms)
+                elif raw_syms is None:
+                    self._portfolio_state["position_symbols"] = set()
+                else:
+                    logger.warning(
+                        "Unexpected position_symbols type %s — resetting to empty set",
+                        type(raw_syms).__name__,
                     )
+                    self._portfolio_state["position_symbols"] = set()
         except Exception:
             logger.warning(
                 "Failed to refresh portfolio state from Redis (session=%s), "

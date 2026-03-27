@@ -463,12 +463,9 @@ All HTTP calls have fixed timeouts, no retry, no exponential backoff, no 429 han
 
 ---
 
-### BUG-89: Set/list serialization mismatch in risk manager
+### ~~BUG-89: Set/list serialization mismatch in risk manager~~ ✅ FIXED
 
-**File:** `risk/manager.py` — Lines 52, 201–205
-**Severity:** MEDIUM
-
-`position_symbols` initialized as `set()` but Redis returns lists. Conversion handles list→set but doesn't validate corrupted data (e.g., dict values).
+**Fixed in:** commit (BUG-89). Added type validation before converting `position_symbols`: accepts list/set/tuple, resets to empty set for None or unexpected types (dict, string, int) with warning log.
 
 ---
 
