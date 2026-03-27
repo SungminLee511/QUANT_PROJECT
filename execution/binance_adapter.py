@@ -95,10 +95,10 @@ class BinanceAdapter(BaseExchangeAdapter):
         try:
             sym = symbol or self._order_symbols.get(external_order_id)
             if not sym:
-                logger.error(
-                    "Cannot cancel Binance order %s — symbol unknown", external_order_id
+                raise ValueError(
+                    f"Cannot cancel Binance order {external_order_id} — symbol unknown "
+                    f"(adapter may have restarted, losing order-symbol map)"
                 )
-                return False
             await self._client.cancel_order(symbol=sym, orderId=int(external_order_id))
             self._order_symbols.pop(external_order_id, None)
             return True
