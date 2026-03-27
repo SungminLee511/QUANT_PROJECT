@@ -126,3 +126,17 @@
 | 42 | VAL-1 | `session/manager.py` | No symbol list validation |
 | 43 | ARCH-8 | multiple | Multiple sources of truth for portfolio |
 | 44+ | Various | Various | Remaining LOW items (see individual files) |
+
+---
+
+## Round 6 — Final Audit (2026-03-27)
+
+> Comprehensive codebase re-audit after completing all Round 5 fixes. 22 new real bugs found.
+> Detailed issues in [`FINAL_AUDIT.md`](FINAL_AUDIT.md).
+
+| Severity | Count | Key Items |
+|----------|-------|-----------|
+| CRITICAL | 1 | Duplicate FILLED messages double-count positions (FAUDIT-1) |
+| HIGH | 6 | Binance API key misroute (FAUDIT-2), wrong enum member (FAUDIT-3), no-op risk check (FAUDIT-4), backtest negative cash (FAUDIT-5), 2 XSS (FAUDIT-6/7) |
+| MEDIUM | 8 | Rebalancer crash (FAUDIT-8), phantom orders (FAUDIT-9), zero-as-NaN (FAUDIT-10/11), query order (FAUDIT-12), silent failures (FAUDIT-13/15), settings race (FAUDIT-16) |
+| LOW | 7 | Metrics accuracy, memory leak, reconciler blind to shorts, input validation |
