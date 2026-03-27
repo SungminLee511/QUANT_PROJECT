@@ -76,6 +76,7 @@ class TradeSignal(BaseModel):
     metadata: dict = Field(default_factory=dict)
     session_id: str = ""
     source: str = "strategy"
+    exchange: str = ""  # ARCH-9: Optional exchange hint ("binance", "alpaca")
 
 
 class OrderRequest(BaseModel):

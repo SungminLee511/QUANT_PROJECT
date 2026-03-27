@@ -6,6 +6,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 import requests
 
+from data.sources.retry import retry_request
+
 logger = logging.getLogger(__name__)
 
 BINANCE_BASE = "https://api.binance.com"
@@ -56,7 +58,8 @@ class BinanceSource:
             try:
                 # Use the multi-symbol 24hr ticker endpoint
                 symbols_param = str(symbols).replace("'", '"')
-                resp = self._session.get(
+                resp = retry_request(
+                    self._session, "get",
                     f"{BINANCE_BASE}/api/v3/ticker/24hr",
                     params={"symbols": symbols_param},
                     timeout=10,
@@ -117,7 +120,8 @@ class BinanceSource:
             asks = np.zeros(n, dtype=np.float64)
 
             def _fetch_book(symbol: str) -> tuple[str, float, float]:
-                resp = self._session.get(
+                resp = retry_request(
+                    self._session, "get",
                     f"{BINANCE_BASE}/api/v3/depth",
                     params={"symbol": symbol, "limit": 1},
                     timeout=5,
@@ -203,7 +207,8 @@ class BinanceSource:
         for symbol in symbols:
             idx = sym_idx[symbol]
             try:
-                resp = self._session.get(
+                resp = retry_request(
+                    self._session, "get",
                     f"{BINANCE_BASE}/api/v3/klines",
                     params={
                         "symbol": symbol,
@@ -253,7 +258,7 @@ class BinanceSource:
                         elif c > 0:
                             field_arrays["vwap"][idx, col] = c
                         else:
-                            logger.debug("VWAP fallback: zero volume and zero close for %s bar %d", symbol, j)
+                            logger.warning("VWAP fallback: zero volume and zero close for %s bar %d", symbol, j)
                     if "num_trades" in field_arrays:
                         field_arrays["num_trades"][idx, col] = trades
             except Exception:

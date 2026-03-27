@@ -4,6 +4,8 @@ import logging
 import numpy as np
 import requests
 
+from data.sources.retry import retry_request
+
 logger = logging.getLogger(__name__)
 
 ALPACA_DATA_BASE = "https://data.alpaca.markets/v2"
@@ -70,7 +72,8 @@ class AlpacaSource:
                 prices = np.full(n, np.nan, dtype=np.float64)
                 try:
                     symbols_param = ",".join(symbols)
-                    resp = self._session.get(
+                    resp = retry_request(
+                        self._session, "get",
                         f"{ALPACA_DATA_BASE}/stocks/trades/latest",
                         params={"symbols": symbols_param, "feed": "iex"},
                         timeout=10,
@@ -93,7 +96,8 @@ class AlpacaSource:
                 asks = np.full(n, np.nan, dtype=np.float64)
                 try:
                     symbols_param = ",".join(symbols)
-                    resp = self._session.get(
+                    resp = retry_request(
+                        self._session, "get",
                         f"{ALPACA_DATA_BASE}/stocks/quotes/latest",
                         params={"symbols": symbols_param, "feed": "iex"},
                         timeout=10,
@@ -131,7 +135,8 @@ class AlpacaSource:
 
             try:
                 symbols_param = ",".join(symbols)
-                resp = self._session.get(
+                resp = retry_request(
+                    self._session, "get",
                     f"{ALPACA_DATA_BASE}/stocks/bars/latest",
                     params={"symbols": symbols_param, "feed": "iex"},
                     timeout=10,
@@ -214,7 +219,8 @@ class AlpacaSource:
 
         try:
             symbols_param = ",".join(symbols)
-            resp = self._session.get(
+            resp = retry_request(
+                self._session, "get",
                 f"{ALPACA_DATA_BASE}/stocks/bars",
                 params={
                     "symbols": symbols_param,

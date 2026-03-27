@@ -121,6 +121,21 @@ class OrderRouter:
                 order.avg_price = sim_status.avg_price
             else:
                 order.transition(OrderStatus.PLACED)
+                # BUG-55: Query actual status immediately after placement.
+                # Market orders may already be filled by the time we publish.
+                try:
+                    if request.exchange == Exchange.BINANCE and hasattr(adapter, "get_order_status_for_symbol"):
+                        live_status = await adapter.get_order_status_for_symbol(
+                            request.symbol, external_id
+                        )
+                    else:
+                        live_status = await adapter.get_order_status(external_id)
+                    if live_status.status in (OrderStatus.FILLED, OrderStatus.PARTIALLY_FILLED):
+                        order.transition(live_status.status)
+                        order.filled_quantity = live_status.filled_qty
+                        order.avg_price = live_status.avg_price
+                except Exception:
+                    logger.debug("Immediate status query failed for %s — will catch in poll", order_id)
         except Exception:
             logger.exception("Failed to place order %s (session=%s)", order_id, self._session_id)
             order.transition(OrderStatus.FAILED)

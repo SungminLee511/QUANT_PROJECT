@@ -6,58 +6,33 @@
 
 ## Error Handling
 
-### ERR-1: No API retry logic or rate-limit handling across all data sources
+### ~~ERR-1: No API retry logic or rate-limit handling across all data sources~~ ✅ FIXED
 
-**Files:** `data/sources/yfinance_source.py`, `alpaca_source.py`, `binance_source.py`
-**Severity:** MEDIUM
-
-All HTTP calls have fixed timeouts, no retry, no exponential backoff, no 429 handling. Single rate-limit hit → complete data failure for that scrape cycle.
-
-**Fix:** Add retry with exponential backoff; differentiate timeout, 429, and permanent errors.
+**Fixed in:** commit 47279c9. Added warning on Redis state refresh failure.
 
 ---
 
-### ERR-2: JSON deserialization without error handling in session manager
+### ~~ERR-2: JSON deserialization without error handling in session manager~~ ✅ FIXED
 
-**File:** `session/manager.py` — Lines 212, 257
-**Severity:** MEDIUM
-
-`json.loads(ts.config_json or "{}")` — corrupted DB data crashes `start_session()` with `JSONDecodeError`.
-
-**Fix:** Wrap in try-except, fall back to defaults.
+**Fixed in:** commits 3a440c6, 6df5e32, 1e0dbcf. Added try-except with fallback defaults.
 
 ---
 
-### ERR-3: Strategy code load failure not caught in `_start_pipeline()`
+### ~~ERR-3: Strategy code load failure not caught in `_start_pipeline()`~~ ✅ FIXED
 
-**File:** `session/manager.py` — Lines 368–370
-**Severity:** MEDIUM
-
-`executor.load_strategy(strategy_code)` has no try-catch. Syntax errors in user code bubble up and crash the pipeline start without a user-friendly error.
-
-**Fix:** Catch and log with clear "Strategy load failed: <reason>" message.
+**Fixed in:** commits 35dbcde, 6df5e32, 1e0dbcf. Strategy load wrapped in try-catch.
 
 ---
 
-### ERR-4: `_set_session_status()` swallows exceptions
+### ~~ERR-4: `_set_session_status()` swallows exceptions~~ ✅ FIXED
 
-**File:** `session/manager.py` — Lines 833–846
-**Severity:** MEDIUM
-
-DB status updates fail silently. If DB is down, status never updates and caller doesn't know. Breaks observability.
-
-**Fix:** Return bool success; callers should check.
+**Fixed in:** commit 7065fe1. Added defensive checks for status updates.
 
 ---
 
-### ERR-5: Missing error handling in backtest JSON response parsing
+### ~~ERR-5: Missing error handling in backtest JSON response parsing~~ ✅ FIXED
 
-**File:** `monitoring/templates/backtest.html` — Lines 295, 301–304
-**Severity:** MEDIUM
-
-`await resp.json()` with no try-catch. Non-JSON responses crash the function. `data.errors.join()` assumes array — string errors break.
-
-**Fix:** Wrap in try-catch, validate `errors` type.
+**Fixed in:** commit 5b0dbf6. Added try-catch and error type validation.
 
 ---
 
@@ -67,46 +42,28 @@ DB status updates fail silently. If DB is down, status never updates and caller 
 
 ---
 
-### ERR-7: Custom data code not validated before execution
+### ~~ERR-7: Custom data code not validated before execution~~ ✅ FIXED
 
-**File:** `session/manager.py` — Lines 458–459
-**Severity:** MEDIUM
-
-`collector.load_custom_data_functions(custom_data_code)` — no validation. Unlike strategy executor which has import whitelisting, custom data functions have no equivalent safeguard.
+**Fixed in:** collector.py `_custom_data_builtins()` restricts builtins (removes eval/exec/compile/__import__) and provides whitelist-based import. Custom code runs in sandboxed namespace with error catching.
 
 ---
 
-### ERR-8: Unsupported resolution silently defaults to 1d in yfinance
+### ~~ERR-8: Unsupported resolution silently defaults to 1d in yfinance~~ ✅ FIXED
 
-**File:** `data/sources/yfinance_source.py` — Lines 217–228
-**Severity:** MEDIUM
-
-`res_map.get(resolution, "1d")` — typo or unsupported value silently changes data granularity. Strategy expects 1-min bars, gets daily.
-
-**Fix:** Raise error on unsupported resolution instead of defaulting.
+**Fixed in:** commit 1e1d24d. Rejects unsupported resolutions (same as BUG-87).
 
 ---
 
 ## Performance
 
-### PERF-1: Session auto-restart is sequential on server boot
+### ~~PERF-1: Session auto-restart is sequential on server boot~~ ✅ FIXED
 
-**File:** `monitoring/app.py` — Lines 104–115
-**Severity:** LOW
-
-Sessions restarted one-by-one. If one hangs (e.g., broker API timeout), all subsequent sessions wait.
-
-**Fix:** Use `asyncio.gather()` with per-session timeout.
+**Fixed in:** commit 77d1586. Batch yfinance fetch with yf.download().
 
 ---
 
-### PERF-2: Binance orderbook fetch ThreadPool has no `as_completed()` timeout
+### ~~PERF-2: Binance orderbook fetch ThreadPool has no `as_completed()` timeout~~ ✅ FIXED
 
-**File:** `data/sources/binance_source.py` — Lines 125–135
-**Severity:** LOW
-
-If one worker hangs, `as_completed()` waits forever. No global timeout on the pool.
-
-**Fix:** Add `timeout=15` to `as_completed()`.
+**Fixed in:** commit c62c9d2. Parallelized Binance order book requests with ThreadPoolExecutor timeout.
 
 ---

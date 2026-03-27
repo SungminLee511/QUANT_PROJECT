@@ -145,7 +145,7 @@
                 {% if sessions %}
                     {% for s in sessions %}
                     <div class="session-item {% if selected_session == s.id %}active{% endif %}"
-                         data-id="{{ s.id }}" onclick="selectSession('{{ s.id }}')">
+                         data-id="{{ s.id }}" data-session-type="{{ s.session_type }}" onclick="selectSession('{{ s.id }}')">
                         <div class="s-name">
                             {{ s.name }}
                             {% if s.is_simulation %}
@@ -206,18 +206,6 @@
                 <label>Symbol Universe</label>
                 <select id="newUniverse" onchange="onUniverseChange()">
                     <option value="">— Custom (type your own) —</option>
-                    <optgroup label="Crypto" id="universesCrypto">
-                        <option value="BTCUSDT,ETHUSDT">BTC + ETH</option>
-                        <option value="BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,XRPUSDT,ADAUSDT,DOGEUSDT,AVAXUSDT,DOTUSDT,MATICUSDT">Crypto Top 10</option>
-                        <option value="BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,XRPUSDT,ADAUSDT,DOGEUSDT,AVAXUSDT,DOTUSDT,MATICUSDT,SHIBUSDT,LTCUSDT,TRXUSDT,ATOMUSDT,LINKUSDT,NEARUSDT,UNIUSDT,APTUSDT,OPUSDT,ARBUSDT">Crypto Top 20</option>
-                    </optgroup>
-                    <optgroup label="US Stocks" id="universesStocks">
-                        <option value="AAPL,MSFT,GOOGL,AMZN,NVDA,META,TSLA">Mag 7</option>
-                        <option value="AAPL,MSFT,GOOGL,AMZN,NVDA,META,TSLA,BRK-B,JPM,V,UNH,JNJ,WMT,PG,MA,HD,XOM,BAC,PFE,ABBV,KO,COST,PEP,MRK,TMO,AVGO,CSCO,ACN,MCD,LIN">S&P 500 Top 30</option>
-                        <option value="AAPL,MSFT,GOOGL,AMZN,NVDA,META,TSLA,AVGO,COST,NFLX,AMD,QCOM,ADBE,INTC,INTU,TXN,AMAT,ISRG,LRCX,MU">NASDAQ Top 20</option>
-                        <option value="XLK,XLF,XLV,XLE,XLI,XLY,XLP,XLU,XLB,XLRE,XLC">Sector ETFs (SPDR)</option>
-                        <option value="SPY,QQQ,IWM,DIA,VTI">Major Index ETFs</option>
-                    </optgroup>
                 </select>
                 <div class="hint">Pick a preset or choose "Custom" to type your own tickers.</div>
             </div>
@@ -293,19 +281,48 @@
             document.getElementById('createModal').classList.remove('show');
         }
 
-        // Show/hide API key fields + toggle universe options based on session type
+        // Universe presets by exchange type
+        const _cryptoPresets = [
+            { label: 'BTC + ETH', value: 'BTCUSDT,ETHUSDT' },
+            { label: 'Crypto Top 10', value: 'BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,XRPUSDT,ADAUSDT,DOGEUSDT,AVAXUSDT,DOTUSDT,MATICUSDT' },
+            { label: 'Crypto Top 20', value: 'BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,XRPUSDT,ADAUSDT,DOGEUSDT,AVAXUSDT,DOTUSDT,MATICUSDT,SHIBUSDT,LTCUSDT,TRXUSDT,ATOMUSDT,LINKUSDT,NEARUSDT,UNIUSDT,APTUSDT,OPUSDT,ARBUSDT' },
+        ];
+        const _stockPresets = [
+            { label: 'Mag 7', value: 'AAPL,MSFT,GOOGL,AMZN,NVDA,META,TSLA' },
+            { label: 'S&P 500 Top 30', value: 'AAPL,MSFT,GOOGL,AMZN,NVDA,META,TSLA,BRK-B,JPM,V,UNH,JNJ,WMT,PG,MA,HD,XOM,BAC,PFE,ABBV,KO,COST,PEP,MRK,TMO,AVGO,CSCO,ACN,MCD,LIN' },
+            { label: 'NASDAQ Top 20', value: 'AAPL,MSFT,GOOGL,AMZN,NVDA,META,TSLA,AVGO,COST,NFLX,AMD,QCOM,ADBE,INTC,INTU,TXN,AMAT,ISRG,LRCX,MU' },
+            { label: 'Sector ETFs (SPDR)', value: 'XLK,XLF,XLV,XLE,XLI,XLY,XLP,XLU,XLB,XLRE,XLC' },
+            { label: 'Major Index ETFs', value: 'SPY,QQQ,IWM,DIA,VTI' },
+        ];
+
+        function buildUniverseOptions(isCrypto) {
+            const sel = document.getElementById('newUniverse');
+            // Keep the Custom option, remove everything else
+            while (sel.options.length > 1) sel.remove(1);
+            sel.value = '';
+            const presets = isCrypto ? _cryptoPresets : _stockPresets;
+            const groupLabel = isCrypto ? 'Crypto' : 'US Stocks';
+            const grp = document.createElement('optgroup');
+            grp.label = groupLabel;
+            presets.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.value;
+                opt.textContent = p.label;
+                grp.appendChild(opt);
+            });
+            sel.appendChild(grp);
+        }
+
+        // Show/hide API key fields + rebuild universe options based on session type
         document.getElementById('newType').addEventListener('change', function() {
             const isLive = this.value === 'binance' || this.value === 'alpaca';
             const isCrypto = this.value.includes('binance');
             document.getElementById('liveKeyFields').style.display = isLive ? 'block' : 'none';
 
-            // Show/hide relevant universe optgroups
-            document.getElementById('universesCrypto').style.display = isCrypto ? '' : 'none';
-            document.getElementById('universesStocks').style.display = isCrypto ? 'none' : '';
+            // Rebuild universe dropdown for the selected exchange
+            buildUniverseOptions(isCrypto);
 
-            // Reset universe dropdown and update symbol placeholder
-            const uniSelect = document.getElementById('newUniverse');
-            uniSelect.value = '';
+            // Update symbol placeholder
             const symInput = document.getElementById('newSymbols');
             if (!isCrypto) {
                 symInput.placeholder = 'AAPL, MSFT, TSLA';
@@ -318,6 +335,9 @@
             document.getElementById('symbolsFieldCustom').style.display = 'block';
             document.getElementById('symbolsFieldPreset').style.display = 'none';
         });
+
+        // Initialize universe options for default session type (binance_sim = crypto)
+        buildUniverseOptions(true);
 
         // Universe preset fills the symbols input + toggle ticker preview
         function onUniverseChange() {

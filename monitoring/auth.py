@@ -54,7 +54,7 @@ def create_session(response: Response, username: str, ttl_hours: int = 24) -> st
         value=token,
         httponly=True,
         secure=True,
-        samesite="lax",
+        samesite="strict",  # SEC-12: strict prevents CSRF via cross-site navigation
         max_age=ttl_hours * 3600,
     )
     return token

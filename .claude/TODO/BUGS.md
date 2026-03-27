@@ -202,12 +202,9 @@
 
 ---
 
-### BUG-76: `_signal_to_order()` doesn't validate computed quantity
+### ~~BUG-76: `_signal_to_order()` doesn't validate computed quantity~~ ✅ FIXED
 
-**File:** `risk/manager.py` — Lines 174–189
-**Severity:** MEDIUM
-
-If `max(price, 0.01)` is 0.01 (micro price), quantity explodes. If `total_equity` negative, quantity is negative. No bounds check before creating `OrderRequest`.
+**Fixed in:** commit c2bd2bf (BUG-75). Validates price > 0, equity > 0 before sizing. Rejects dust quantities (<= 0) and caps at 10x intended notional. Returns None with warning log on failure.
 
 ---
 
@@ -259,21 +256,15 @@ If `max(price, 0.01)` is 0.01 (micro price), quantity explodes. If `total_equity
 
 ---
 
-### BUG-85: Redis listener task not cancelled on reconnect
+### ~~BUG-85: Redis listener task not cancelled on reconnect~~ ✅ FIXED
 
-**File:** `shared/redis_client.py` — Lines 117–134
-**Severity:** MEDIUM
-
-When `_listen()` catches exception, new PubSub created but old listener task may still be running → duplicate listeners.
+**Fixed in:** commit (BUG-22). `_listen()` recreates PubSub and re-subscribes within the same task loop, so old listener naturally exits. `_listener_task` tracked at instance level and properly awaited in `disconnect()`.
 
 ---
 
-### BUG-86: No API retry logic or rate-limit handling across all data sources
+### ~~BUG-86: No API retry logic or rate-limit handling across all data sources~~ ✅ FIXED
 
-**Files:** `yfinance_source.py`, `alpaca_source.py`, `binance_source.py`
-**Severity:** MEDIUM
-
-All HTTP calls have fixed timeouts, no retry, no exponential backoff, no 429 handling. Single rate-limit hit causes complete data failure for that scrape.
+**Fixed in:** BUG-86 commit. Added `data/sources/retry.py` with `retry_request()` — exponential backoff, 429 Retry-After handling, 5xx retry. Applied to all Alpaca and Binance HTTP calls. yfinance `yf.download()` wrapped with retry-on-empty loop.
 
 ---
 

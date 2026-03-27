@@ -386,9 +386,10 @@ Unified market data collection with rolling numpy buffers.
 - **Historical buffer backfill** — on session start, `_backfill_buffers()` pre-fills rolling buffers with historical data so the strategy can fire on the very first live scrape (no warm-up delay)
 
 ### Data Sources (per-field routing via `data/sources/`)
-- **yfinance:** Price, OHLCV, day_change_pct, fundamentals (market_cap, pe_ratio, 52w high/low). No API key. `fetch_history()` uses `yf.download()` for OHLCV bars; fundamentals repeated as constants.
+- **yfinance:** Price, OHLCV, day_change_pct, fundamentals (market_cap, pe_ratio, 52w high/low). No API key. `fetch_history()` uses `yf.download()` for OHLCV bars; fundamentals repeated as constants. Retry-on-empty loop for transient yfinance failures.
 - **Alpaca:** Live quotes (bid/ask/spread), daily bars (OHLCV, VWAP). Requires API key. `fetch_history()` uses `/v2/stocks/bars` endpoint; bid/ask/spread skipped (no historical quotes).
 - **Binance:** 24hr ticker (price, OHLCV, VWAP, num_trades, day_change_pct) + order book (bid/ask/spread). Public API. `fetch_history()` uses `/api/v3/klines` per-symbol; bid/ask/spread skipped.
+- **Retry module** (`data/sources/retry.py`): Shared `retry_request()` helper with exponential backoff, 429 Retry-After handling, and 5xx retry. Used by Alpaca and Binance sources for all HTTP calls.
 
 Each field in data_config specifies its `"source"` (yfinance/alpaca/binance). The collector groups fields by source, fetches from each source once, then merges results into buffers. If `"source"` is omitted, `get_default_source()` picks the first available source for the exchange type.
 
@@ -402,7 +403,7 @@ Field registry (`data/sources/__init__.py`) defines 16 fields with per-exchange 
 {
   "resolution": "1min",
   "exec_every_n": 5,
-  "schedule_mode": "always_on",
+  "schedule_mode": "always_on",          // always_on | market_hours_only | market_hours_liquidate
   "strategy_mode": "rebalance",
   "short_loss_limit_pct": 1.0,
   "commission_pct": 0.0,

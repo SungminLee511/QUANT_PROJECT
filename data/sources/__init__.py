@@ -115,3 +115,19 @@ def get_default_source(field_name: str, is_crypto: bool) -> str:
         return DataSource.YFINANCE.value
     sources = fd.crypto_sources if is_crypto else fd.stock_sources
     return sources[0].value if sources else DataSource.YFINANCE.value
+
+
+def validate_source(field_name: str, source: str, is_crypto: bool) -> str:
+    """Return *source* if it is valid for the field+exchange, else the default.
+
+    Prevents e.g. yfinance being used for a crypto session because the config
+    was saved with a stock default.
+    """
+    fd = FIELD_MAP.get(field_name)
+    if not fd:
+        return get_default_source(field_name, is_crypto)
+    valid = fd.crypto_sources if is_crypto else fd.stock_sources
+    valid_names = {s.value for s in valid}
+    if source in valid_names:
+        return source
+    return get_default_source(field_name, is_crypto)

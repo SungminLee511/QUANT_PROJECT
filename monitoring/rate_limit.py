@@ -41,6 +41,8 @@ class RateRule:
 
 # Default rules — keyed by route prefix
 DEFAULT_RULES: dict[str, RateRule] = {
+    # SEC-13: Brute-force protection on login
+    "/login": RateRule(limit=10, window=60),
     # Expensive: yfinance download + CPU-bound strategy replay
     "/backtest/api/run": RateRule(limit=5, window=60),
     # Session lifecycle — moderate

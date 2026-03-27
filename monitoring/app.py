@@ -1,7 +1,15 @@
 """FastAPI app factory — mounts auth, dashboard, editor, settings, and sessions routers."""
 
 import logging
+import sys
 from contextlib import asynccontextmanager
+
+# Configure root logger so all application logs actually print
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    stream=sys.stdout,
+)
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -130,6 +138,23 @@ def create_app(config: dict) -> FastAPI:
             return err
         return await call_next(request)
 
+    # ── Security headers middleware (SEC-9, SEC-10) ───────────────────
+
+    @app.middleware("http")
+    async def security_headers_middleware(request: Request, call_next):
+        """Add security headers to all responses."""
+        response = await call_next(request)
+        # SEC-9: Content-Security-Policy — allow self + inline styles (needed for templates)
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+            "connect-src 'self'; frame-ancestors 'none'"
+        )
+        # SEC-10: Clickjacking protection
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+
     # ── CSRF middleware (ARCH-3) ─────────────────────────────────────
 
     @app.middleware("http")
@@ -187,6 +212,16 @@ def create_app(config: dict) -> FastAPI:
         form = await request.form()
         username = form.get("username", "")
         password = form.get("password", "")
+
+        # SEC-8: Validate input length/type to prevent abuse
+        if not isinstance(username, str) or not isinstance(password, str):
+            return templates.TemplateResponse(request, "login.html", {
+                "error": "Invalid input",
+            })
+        if len(username) > 128 or len(password) > 128 or len(username) < 1 or len(password) < 1:
+            return templates.TemplateResponse(request, "login.html", {
+                "error": "Invalid username or password",
+            })
 
         if check_credentials(username, password, config):
             response = RedirectResponse(url="/overview", status_code=302)

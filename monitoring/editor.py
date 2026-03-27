@@ -23,6 +23,9 @@ from strategy.custom_validator import validate_custom_data_function
 
 logger = logging.getLogger(__name__)
 
+# SEC-14: Max code size in bytes (100 KB — generous for strategy code)
+MAX_CODE_SIZE = 100_000
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_STRATEGY = PROJECT_ROOT / "strategy" / "examples" / "momentum_v2.py"
 
@@ -79,6 +82,7 @@ def create_editor_router(
                     "custom_data_code": info.get("custom_data_code") or [],
                     "source": "session" if info.get("strategy_code") else "default",
                     "session_id": session_id,
+                    "session_type": info.get("session_type", ""),
                 })
 
         # Fallback: default
@@ -107,6 +111,13 @@ def create_editor_router(
                 "errors": ["Code is empty"],
                 "warnings": [],
             })
+        # SEC-14: Reject oversized code
+        if len(code) > MAX_CODE_SIZE:
+            return JSONResponse({
+                "valid": False,
+                "errors": [f"Code exceeds size limit ({len(code):,} > {MAX_CODE_SIZE:,} bytes)"],
+                "warnings": [],
+            })
 
         result = validate_strategy_code(code, data_config)
         return JSONResponse({
@@ -131,6 +142,13 @@ def create_editor_router(
             return JSONResponse({
                 "valid": False,
                 "errors": ["Code is empty"],
+                "warnings": [],
+            })
+        # SEC-14: Reject oversized code
+        if len(code) > MAX_CODE_SIZE:
+            return JSONResponse({
+                "valid": False,
+                "errors": [f"Code exceeds size limit ({len(code):,} > {MAX_CODE_SIZE:,} bytes)"],
                 "warnings": [],
             })
 
@@ -167,6 +185,16 @@ def create_editor_router(
             return JSONResponse({"deployed": False, "errors": ["No session selected"]})
 
         errors = []
+
+        # SEC-14: Reject oversized code in deploy
+        if len(strategy_code) > MAX_CODE_SIZE:
+            errors.append(f"Strategy code exceeds size limit ({len(strategy_code):,} > {MAX_CODE_SIZE:,} bytes)")
+        for i, item in enumerate(custom_data_code):
+            c = item.get("code", "") if isinstance(item, dict) else ""
+            if len(c) > MAX_CODE_SIZE:
+                errors.append(f"Custom data #{i+1} exceeds size limit")
+        if errors:
+            return JSONResponse({"deployed": False, "errors": errors})
 
         # 1. Validate strategy code
         if strategy_code.strip():

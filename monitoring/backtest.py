@@ -104,12 +104,32 @@ def create_backtest_router(
         short_loss_limit_pct = float(body.get("short_loss_limit_pct", 1.0))
         commission_pct = float(body.get("commission_pct", 0.0))
 
+        # Determine if crypto session — check multiple signals
+        is_crypto = False
+        session_type = body.get("session_type", "")
+
         # Get data config from body or session
         data_config = body.get("data_config")
-        if not data_config and session_id:
+        if session_id:
             info = await session_manager.get_session_info(session_id)
-            if info and info.get("data_config"):
-                data_config = info["data_config"]
+            if info:
+                if not data_config and info.get("data_config"):
+                    data_config = info["data_config"]
+                if not session_type:
+                    session_type = info.get("session_type", "")
+
+        # Signal 1: explicit session_type
+        if session_type.startswith("binance"):
+            is_crypto = True
+
+        # Signal 2: auto-detect from symbols (BTCUSDT, ETHBUSD, etc.)
+        if not is_crypto and symbols:
+            crypto_suffixes = ("USDT", "BUSD", "USDC")
+            if any(s.upper().endswith(crypto_suffixes) for s in symbols):
+                is_crypto = True
+
+        logger.info("Backtest: session_type=%r, is_crypto=%s, symbols=%s",
+                     session_type, is_crypto, symbols[:3])
 
         # Run backtest in a thread executor (yfinance is blocking)
         from backtest.engine import run_backtest_async
@@ -135,6 +155,7 @@ def create_backtest_router(
                 strategy_mode=strategy_mode,
                 short_loss_limit_pct=short_loss_limit_pct,
                 commission_pct=commission_pct,
+                is_crypto=is_crypto,
             )
             return JSONResponse(result.to_dict())
 
@@ -160,6 +181,7 @@ def create_backtest_router(
                     "source": "session",
                     "symbols": info.get("symbols", []),
                     "starting_budget": info.get("starting_budget", 10000),
+                    "session_type": info.get("session_type", ""),
                 })
 
         # Fallback to default strategy

@@ -67,6 +67,7 @@
     let autoScroll = true;
     let entryCount = 0;
     let evtSource = null;
+    let disconnectTimer = null;  // CONC-8: module-scoped to avoid zombie timers
     const MAX_DOM_ENTRIES = 5000;
 
     const viewport = document.getElementById('logViewport');
@@ -104,9 +105,12 @@
         viewport.appendChild(el);
         entryCount++;
 
-        // Cap DOM size
-        while (viewport.children.length > MAX_DOM_ENTRIES + 1) {
-            viewport.removeChild(viewport.children[1]); // [0] is the empty msg
+        // CONC-9: Cap DOM size — use querySelectorAll for stable element selection
+        // instead of relying on children index assumptions
+        const entries = viewport.querySelectorAll('.log-entry');
+        let excess = entries.length - MAX_DOM_ENTRIES;
+        for (let i = 0; i < excess; i++) {
+            entries[i].remove();
         }
 
         countEl.textContent = entryCount.toLocaleString() + ' entries';
@@ -157,10 +161,11 @@
     // ── SSE connection ──
     function connectSSE() {
         if (evtSource) { evtSource.close(); }
+        // CONC-8: Cancel any pending timer from previous connection
+        if (disconnectTimer) { clearTimeout(disconnectTimer); disconnectTimer = null; }
         const q = currentSessionId ? `?session_id=${currentSessionId}` : '';
         evtSource = new EventSource('/logs/api/stream' + q);
 
-        let disconnectTimer = null;
         evtSource.onopen = () => {
             if (disconnectTimer) { clearTimeout(disconnectTimer); disconnectTimer = null; }
             statusEl.textContent = 'Connected';

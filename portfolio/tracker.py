@@ -301,8 +301,9 @@ class PortfolioTracker:
             await asyncio.sleep(5)
 
     async def _snapshot_loop(self) -> None:
-        """Store equity snapshots to DB every 60 seconds."""
+        """Store equity snapshots to DB every 60 seconds + reconcile positions."""
         interval = self._config.get("portfolio", {}).get("reconcile_interval_sec", 60)
+        reconcile_counter = 0
         while self._running:
             await asyncio.sleep(interval)
             if not self._session_id:
@@ -320,6 +321,12 @@ class PortfolioTracker:
                 logger.debug("Equity snapshot: %.2f (session=%s)", equity, self._session_id)
             except Exception:
                 logger.exception("Error saving equity snapshot")
+
+            # ARCH-8: Reconcile in-memory vs DB positions every 5 snapshots (~5 min)
+            reconcile_counter += 1
+            if reconcile_counter >= 5:
+                reconcile_counter = 0
+                await self._reconcile_positions()
 
     async def _persist_position(self, symbol: str, pos: dict) -> None:
         """Upsert position to DB."""
@@ -358,3 +365,62 @@ class PortfolioTracker:
                     session.add(db_pos)
         except Exception:
             logger.exception("Failed to persist position %s", symbol)
+
+    async def _reconcile_positions(self) -> None:
+        """ARCH-8: Compare in-memory positions with DB positions and log drift.
+
+        Runs periodically to detect divergence between the in-memory tracker
+        (source of truth for speed) and DB (source of truth for durability).
+        Does NOT auto-correct — only warns so an operator can investigate.
+        """
+        if not self._session_id:
+            return
+        try:
+            from sqlalchemy import select
+
+            async with get_session() as session:
+                stmt = select(PositionModel).where(
+                    PositionModel.session_id == self._session_id
+                )
+                result = await session.execute(stmt)
+                db_positions = {row.symbol: row for row in result.scalars().all()}
+
+            # Compare each in-memory position with DB
+            mem_symbols = {
+                s for s, p in self._positions.items() if abs(p["quantity"]) > 0.0001
+            }
+            db_symbols = {
+                s for s, row in db_positions.items() if abs(row.quantity) > 0.0001
+            }
+
+            # Check for symbol mismatches
+            mem_only = mem_symbols - db_symbols
+            db_only = db_symbols - mem_symbols
+            if mem_only:
+                logger.warning(
+                    "RECONCILE: positions in memory but not DB: %s (session=%s)",
+                    mem_only, self._session_id,
+                )
+            if db_only:
+                logger.warning(
+                    "RECONCILE: positions in DB but not memory: %s (session=%s)",
+                    db_only, self._session_id,
+                )
+
+            # Check quantity drift on shared symbols
+            for sym in mem_symbols & db_symbols:
+                mem_qty = self._positions[sym]["quantity"]
+                db_qty = db_positions[sym].quantity
+                if db_qty == 0:
+                    continue
+                drift_pct = abs(mem_qty - db_qty) / abs(db_qty) * 100
+                if drift_pct > 1.0:  # >1% drift
+                    logger.warning(
+                        "RECONCILE: %s quantity drift %.2f%% — memory=%.6f vs DB=%.6f (session=%s)",
+                        sym, drift_pct, mem_qty, db_qty, self._session_id,
+                    )
+        except Exception:
+            logger.debug(
+                "Reconciliation check failed (session=%s)", self._session_id,
+                exc_info=True,
+            )

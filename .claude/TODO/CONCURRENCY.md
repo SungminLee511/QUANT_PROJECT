@@ -6,71 +6,41 @@
 
 ## HIGH
 
-### CONC-5: Unguarded access to `sim_adapter._positions` dict
+### ~~CONC-5: Unguarded access to `sim_adapter._positions` dict~~ ✅ FIXED
 
-**File:** `session/manager.py` — Lines 559, 644
-**Severity:** HIGH
-
-`pipeline.sim_adapter._positions` read directly without acquiring the `_lock`. Concurrent modifications during iteration can cause `RuntimeError: dictionary changed size during iteration`.
-
-**Fix:** Add `get_positions_snapshot()` method to SimAdapter that acquires lock and returns a copy.
+**Fixed in:** commit 1af2d72. Lock-guarded position access in SimAdapter.
 
 ---
 
-### CONC-6: Task cancellation suppresses all exceptions
+### ~~CONC-6: Task cancellation suppresses all exceptions~~ ✅ FIXED
 
-**File:** `session/manager.py` — Lines 292–298, 320–328
-**Severity:** HIGH
-
-`except (asyncio.CancelledError, Exception): pass` swallows non-cancellation errors that may indicate resource leaks (DB connections, file handles). No logging of suppressed errors.
-
-**Fix:** Use `asyncio.gather(*tasks, return_exceptions=True)`, then log non-CancelledError exceptions.
+**Fixed in:** commit 9e251b1. Logs non-cancellation errors during task teardown at WARNING level.
 
 ---
 
 ## MEDIUM
 
-### CONC-7: Kill switch check-then-act race
+### ~~CONC-7: Kill switch check-then-act race~~ ✅ FIXED
 
-**File:** `risk/kill_switch.py` — Lines 16–19
-**Severity:** MEDIUM
-
-`is_active()` + subsequent order placement is not atomic. Another service can activate kill switch between check and action. Signals can slip through.
-
-**Fix:** Use Redis transactions (WATCH/MULTI/EXEC) or check inside order emission critical section.
+**Fixed in:** CONC-7 commit. Added kill switch re-check immediately before `redis.publish(order)` in V1 RiskManager. Minimizes race window to synchronous code between check and emit. Full WATCH/MULTI/EXEC overkill for single-worker asyncio.
 
 ---
 
-### CONC-8: SSE reconnection timer scoped incorrectly
+### ~~CONC-8: SSE reconnection timer scoped incorrectly~~ ✅ FIXED
 
-**File:** `monitoring/templates/logs.html` — Lines 158–188
-**Severity:** MEDIUM
-
-`disconnectTimer` is function-scoped in `connectSSE()`. Re-calling creates new closures referencing new variable; old closures reference old variable → zombie timers, incorrect UI state.
-
-**Fix:** Move `disconnectTimer` to global/module scope. Clear on reconnect.
+**Fixed in:** CONC-8 commit. Moved `disconnectTimer` to module scope. `connectSSE()` now clears any pending timer from previous connection before creating new EventSource.
 
 ---
 
-### CONC-9: DOM manipulation race in `appendEntry()`
+### ~~CONC-9: DOM manipulation race in `appendEntry()`~~ ✅ FIXED
 
-**File:** `monitoring/templates/logs.html` — Lines 101–114
-**Severity:** MEDIUM
-
-`viewport.children[1]` assumes empty message is always at `[0]`. Rapid SSE arrivals can cause the index assumption to break if empty message was removed. `removeChild(children[1])` loop assumes stable indexing during removal.
-
-**Fix:** Use `querySelectorAll('.log-entry')` for precise targeting instead of children index.
+**Fixed in:** CONC-9 commit. Replaced `children[1]` index-based trimming with `querySelectorAll('.log-entry')` for stable element selection. Excess entries removed by direct `.remove()` call.
 
 ---
 
-### CONC-10: Schedule loop 30s sleep delays shutdown detection
+### ~~CONC-10: Schedule loop 30s sleep delays shutdown detection~~ ✅ FIXED
 
-**File:** `session/manager.py` — Lines 510–539
-**Severity:** MEDIUM
-
-`_schedule_loop()` sleeps 30s. Takes up to 30s to notice `pipeline.running = False` or `CancelledError`. Also, non-cancellation exceptions in the loop aren't handled cleanly.
-
-**Fix:** Split sleep into shorter intervals or use `asyncio.wait_for()`.
+**Fixed in:** commit 1e0dbcf. Split sleep and improved shutdown detection.
 
 ---
 

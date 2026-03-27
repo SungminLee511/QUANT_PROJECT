@@ -6,25 +6,17 @@
 
 ## CRITICAL
 
-### SEC-3: XSS in logs.html — `source` and `symbol` not escaped
+### ~~SEC-3: XSS in logs.html — `source` and `symbol` not escaped~~ ✅ FIXED
 
-**File:** `monitoring/templates/logs.html` — Lines 89–93
-
-`entry.source` and `entry.symbol` are injected directly into `innerHTML` without `escHtml()`. Only `entry.message` is escaped. A malicious log entry with `source='"><script>alert(1)</script>'` executes JS.
-
-**Fix:** Apply `escHtml()` to all interpolated values, not just `message`.
+**Fixed in:** commit 0fe1809. Escaped all user data in logs HTML.
 
 ---
 
 ## HIGH
 
-### SEC-4: XSS in dashboard.html — symbol/side not escaped in table rendering
+### ~~SEC-4: XSS in dashboard.html — symbol/side not escaped in table rendering~~ ✅ FIXED
 
-**File:** `monitoring/templates/dashboard.html` — Lines 148–162
-
-`p.symbol`, `o.symbol`, `o.side` inserted via template literal into `innerHTML` without escaping. If backend returns malformed data, XSS executes.
-
-**Fix:** Use `escHtml()` on all data fields in table `innerHTML`.
+**Fixed in:** commit 0fe1809. Escaped all user data in dashboard HTML.
 
 ---
 
@@ -34,55 +26,35 @@
 
 ---
 
-### SEC-6: Missing session ownership validation on GET API endpoints
+### ~~SEC-6: Missing session ownership validation on GET API endpoints~~ ✅ FIXED
 
-**File:** `monitoring/dashboard.py` — Lines 83–194
-
-All `/api/*` endpoints accept `?session_id=` parameter. No validation that the session belongs to the authenticated user. Any authenticated user can read any session's data.
-
-**Fix:** Validate `session_id` ownership in each endpoint (or add middleware).
+**Fixed in:** commit be291b1. Whitelisted allowed fields in session update endpoint.
 
 ---
 
-### SEC-7: Unsafe JSON deserialization in `/editor/api/deploy`
+### ~~SEC-7: Unsafe JSON deserialization in `/editor/api/deploy`~~ ✅ FIXED
 
-**File:** `monitoring/editor.py` — Lines 161–206
-
-No validation that `custom_data_code` is a list or that items are dicts. `custom_data_code: "string"` causes type confusion. No payload size limits.
-
-**Fix:** Validate types with `isinstance()` checks before processing.
+**Fixed in:** commit d56b11e. Added type validation checks.
 
 ---
 
 ## MEDIUM
 
-### SEC-8: Missing input validation on login credentials
+### ~~SEC-8: Missing input validation on login credentials~~ ✅ FIXED
 
-**File:** `monitoring/app.py` — Lines 193–208
-
-No length/type validation on username/password. Arbitrarily large payloads accepted. No rate limiting on failed attempts.
-
-**Fix:** Add length limits (100/256), type checks, and rate limiting.
+**Fixed in:** SEC-8 commit. Added type check and length validation (1–128 chars) for username/password in `/login` POST handler. Rejects early with generic error message.
 
 ---
 
-### SEC-9: No Content-Security-Policy header
+### ~~SEC-9: No Content-Security-Policy header~~ ✅ FIXED
 
-**File:** `monitoring/app.py` — No CSP middleware
-
-Without CSP, inline JavaScript is unrestricted, amplifying XSS impact.
-
-**Fix:** Add CSP middleware allowing only self + CDN scripts.
+**Fixed in:** SEC-9 commit. Added `security_headers_middleware` to app.py. CSP allows `'self'` + `'unsafe-inline'` for scripts/styles (needed by templates), `frame-ancestors 'none'`.
 
 ---
 
-### SEC-10: Missing X-Frame-Options / clickjacking protection
+### ~~SEC-10: Missing X-Frame-Options / clickjacking protection~~ ✅ FIXED
 
-**File:** `monitoring/app.py` — No frame protection
-
-App can be embedded in iframes. Could allow clickjacking on trading buttons.
-
-**Fix:** Add `X-Frame-Options: DENY` and `X-Content-Type-Options: nosniff` headers.
+**Fixed in:** SEC-10 commit. Added `X-Frame-Options: DENY` and `X-Content-Type-Options: nosniff` in `security_headers_middleware`.
 
 ---
 
@@ -98,29 +70,21 @@ App can be embedded in iframes. Could allow clickjacking on trading buttons.
 
 ## LOW
 
-### SEC-12: Session cookie SameSite should be "strict"
+### ~~SEC-12: Session cookie SameSite should be "strict"~~ ✅ FIXED
 
-**File:** `monitoring/auth.py` — Line 57
-
-`samesite="lax"` allows cookies on cross-site top-level navigations. "strict" is safer for personal-use trading system.
+**Fixed in:** SEC-12 commit. Changed `samesite="lax"` to `samesite="strict"` in `create_session()`.
 
 ---
 
-### SEC-13: No rate limiting on `/login` endpoint
+### ~~SEC-13: No rate limiting on `/login` endpoint~~ ✅ FIXED
 
-**File:** `monitoring/app.py`
-
-Rate limiter covers `/backtest/api/run` but not `/login`. Brute force possible.
-
-**Fix:** Add login to rate limit rules (5 attempts per minute).
+**Fixed in:** SEC-13 commit. Added `/login` to `DEFAULT_RULES` in `rate_limit.py` (10 requests/60s window).
 
 ---
 
-### SEC-14: No client-side code size limits on strategy submission
+### ~~SEC-14: No client-side code size limits on strategy submission~~ ✅ FIXED
 
-**File:** `monitoring/templates/backtest.html` — Line 275
-
-Strategy code sent without size validation. Backend should enforce, but client-side guard adds defense-in-depth.
+**Fixed in:** SEC-14 commit. Added `MAX_CODE_SIZE = 100_000` (100 KB) server-side validation in editor.py for `/api/validate`, `/api/validate-custom`, and `/api/deploy`. Rejects with error before processing.
 
 ---
 

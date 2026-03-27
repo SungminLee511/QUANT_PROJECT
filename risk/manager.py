@@ -82,6 +82,26 @@ class RiskManager:
 
             if result.approved:
                 order = self._signal_to_order(signal)
+                if order is None:
+                    # BUG-76: sizing validation failed
+                    await self._publish_log(
+                        "risk_reject", signal.symbol,
+                        f"REJECTED {signal.signal.value.upper()} {signal.symbol} — order sizing failed",
+                        level="warning",
+                        metadata={"signal": signal.signal.value, "reason": "sizing_failed"},
+                    )
+                    return
+                # CONC-7: Re-check kill switch immediately before order emission
+                # to minimize race window between check and action
+                ks_ok, ks_reason = await check_kill_switch(self._redis, self._config)
+                if not ks_ok:
+                    await self._publish_log(
+                        "risk_reject", signal.symbol,
+                        f"REJECTED {signal.signal.value.upper()} {signal.symbol} — {ks_reason} (late check)",
+                        level="warning",
+                        metadata={"signal": signal.signal.value, "reason": ks_reason},
+                    )
+                    return
                 await self._redis.publish(self._order_channel, order)
                 await self._publish_log(
                     "risk_approve", signal.symbol,
@@ -163,32 +183,85 @@ class RiskManager:
 
         return RiskCheckResult(approved=True, reason="All checks passed", original_signal=signal)
 
-    def _signal_to_order(self, signal: TradeSignal) -> OrderRequest:
-        """Convert an approved TradeSignal into an OrderRequest."""
-        # Determine exchange from symbol convention
-        # Crypto pairs typically end in USDT/BTC, equities are short tickers
+    def _signal_to_order(self, signal: TradeSignal) -> OrderRequest | None:
+        """Convert an approved TradeSignal into an OrderRequest.
+
+        Returns None if the order cannot be safely constructed (BUG-76).
+        """
+        # ARCH-9: Use exchange hint from signal if available, fall back to suffix matching
         symbol = signal.symbol.upper()
-        if symbol.endswith("USDT") or symbol.endswith("BTC") or symbol.endswith("ETH"):
-            exchange = Exchange.BINANCE
+        if signal.exchange:
+            try:
+                exchange = Exchange(signal.exchange.lower())
+            except ValueError:
+                logger.warning(
+                    "Unknown exchange '%s' in signal for %s, falling back to suffix detection",
+                    signal.exchange, symbol,
+                )
+                exchange = self._detect_exchange(symbol)
         else:
-            exchange = Exchange.ALPACA
+            exchange = self._detect_exchange(symbol)
 
         # Simple sizing: use max_position_pct of equity
         max_pct = self._config.get("risk", {}).get("max_position_pct", 0.10)
         equity = self._portfolio_state.get("total_equity", 10000)
-        price = self._portfolio_state.get("prices", {}).get(signal.symbol, 1)
-        quantity = (equity * max_pct * signal.strength) / max(price, 0.01)
+        price = self._portfolio_state.get("prices", {}).get(signal.symbol)
+
+        # BUG-76: Validate inputs before computing quantity
+        if price is None or price <= 0:
+            logger.warning(
+                "Cannot size order for %s: price=%s (session=%s)",
+                signal.symbol, price, self._session_id,
+            )
+            return None
+        if equity <= 0:
+            logger.warning(
+                "Cannot size order for %s: equity=%.2f (session=%s)",
+                signal.symbol, equity, self._session_id,
+            )
+            return None
+
+        quantity = (equity * max_pct * signal.strength) / price
+        quantity = round_quantity(quantity, exchange)
+
+        # BUG-76: Reject dust and unreasonably large quantities
+        if quantity <= 0:
+            logger.warning(
+                "Computed quantity <= 0 for %s (qty=%.8f, session=%s)",
+                signal.symbol, quantity, self._session_id,
+            )
+            return None
+
+        # Cap at 10x the intended notional as a sanity guard
+        max_qty = (equity * max_pct * 10) / price
+        if quantity > max_qty:
+            logger.warning(
+                "Quantity %.4f exceeds safety cap %.4f for %s (session=%s)",
+                quantity, max_qty, signal.symbol, self._session_id,
+            )
+            return None
 
         side = Side.BUY if signal.signal.value == "buy" else Side.SELL
 
         return OrderRequest(
             symbol=signal.symbol,
             side=side,
-            quantity=round_quantity(quantity, exchange),
+            quantity=quantity,
             order_type=OrderType.MARKET,
             exchange=exchange,
             strategy_id=signal.strategy_id,
         )
+
+    @staticmethod
+    def _detect_exchange(symbol: str) -> Exchange:
+        """Fallback exchange detection from symbol suffix.
+
+        ARCH-9: This is brittle — prefer setting ``exchange`` on the TradeSignal
+        directly.  Used only as a fallback when the signal has no exchange hint.
+        """
+        if symbol.endswith("USDT") or symbol.endswith("BTC") or symbol.endswith("ETH"):
+            return Exchange.BINANCE
+        return Exchange.ALPACA
 
     async def _refresh_portfolio_state(self) -> None:
         """Pull latest portfolio state from Redis (set by portfolio tracker)."""

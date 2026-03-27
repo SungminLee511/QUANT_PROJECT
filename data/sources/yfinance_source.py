@@ -1,9 +1,15 @@
 """yfinance data source — fetches live price + daily fundamentals for US stocks."""
 
 import logging
+import time
+
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# BUG-86: Retry settings for yfinance calls (which handle HTTP internally)
+_YF_MAX_RETRIES = 2
+_YF_BACKOFF_SEC = 1.0
 
 
 class YFinanceSource:
@@ -55,7 +61,7 @@ class YFinanceSource:
             batch_ok = self._fetch_batch(symbols, batch_fields, result)
             if not batch_ok:
                 # Fallback: per-symbol fast_info (N requests)
-                logger.debug("Batch download failed, falling back to per-symbol fast_info")
+                logger.warning("Batch download failed, falling back to per-symbol fast_info")
                 self._fetch_fast_info_fallback(symbols, batch_fields, result)
 
         # ── Fundamentals: per-symbol ticker.info (no batch API available) ──
@@ -88,15 +94,25 @@ class YFinanceSource:
 
         n = len(symbols)
         try:
-            # period="2d" gives today + yesterday (needed for prev_close / day_change_pct)
-            df = yf.download(
-                symbols if n > 1 else symbols[0],
-                period="2d",
-                interval="1d",
-                progress=False,
-                threads=True,
-            )
-            if df.empty:
+            # BUG-86: Retry yf.download on transient failures
+            df = None
+            for attempt in range(_YF_MAX_RETRIES + 1):
+                df = yf.download(
+                    symbols if n > 1 else symbols[0],
+                    period="2d",
+                    interval="1d",
+                    progress=False,
+                    threads=True,
+                )
+                if not df.empty:
+                    break
+                if attempt < _YF_MAX_RETRIES:
+                    logger.warning(
+                        "yf.download returned empty (attempt %d/%d), retrying after %.1fs",
+                        attempt + 1, _YF_MAX_RETRIES, _YF_BACKOFF_SEC * (attempt + 1),
+                    )
+                    time.sleep(_YF_BACKOFF_SEC * (attempt + 1))
+            if df is None or df.empty:
                 return False
 
             multi = n > 1
@@ -169,7 +185,7 @@ class YFinanceSource:
                 except Exception:
                     fi = None
                 if fi is None:
-                    logger.debug("fast_info returned None for %s, using NaN defaults", symbol)
+                    logger.warning("fast_info returned None for %s, using NaN defaults", symbol)
                     fi = {}
 
                 _last = fi.get("lastPrice") or fi.get("last_price")
