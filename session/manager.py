@@ -327,7 +327,7 @@ class SessionManager:
             except Exception:
                 logger.debug("Error awaiting task cancellation for session %s", session_id, exc_info=True)
 
-        del self._pipelines[session_id]
+        self._pipelines.pop(session_id, None)
         await self._set_session_status(session_id, "stopped")
         await self._publish_log(session_id, "session_event", "Session stopped")
         logger.info("Session %s stopped", session_id)
