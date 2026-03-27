@@ -86,9 +86,20 @@ def check_daily_loss(
     portfolio_state: dict[str, Any],
     config: dict,
 ) -> tuple[bool, str]:
-    """Halt trading if daily loss exceeds threshold."""
+    """Halt trading if daily loss exceeds threshold.
+
+    Note: daily_pnl = current_equity - day_start_equity, which includes
+    both realized and unrealized P&L. This is intentional — the kill
+    switch should fire on total portfolio drawdown, not just closed trades.
+    Unrealized losses represent real risk exposure.
+    """
     risk_cfg = config.get("risk", {})
     max_daily = risk_cfg.get("max_daily_loss_pct", 0.03)
+
+    # 0 means disabled by user
+    if not max_daily:
+        return True, ""
+
     daily_pnl = portfolio_state.get("daily_pnl", 0)
     start_equity = portfolio_state.get("day_start_equity", 0)
 

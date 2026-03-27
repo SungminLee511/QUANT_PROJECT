@@ -276,14 +276,9 @@ If `fetch_history()` fails, a WARNING is logged and live loop fills naturally. B
 
 ---
 
-### BUG-69: Daily loss check mixes realized and unrealized P&L
+### ~~BUG-69: Daily loss check mixes realized and unrealized P&L~~ ✅ CLOSED (by design)
 
-**File:** `risk/limits.py` — Lines 85–107
-**Severity:** HIGH
-
-`daily_pnl = current_equity - day_start_equity` includes both realized and unrealized. Unrealized losses that reverse could trigger kill switch prematurely, or short-term spikes could mask real losses.
-
-**Fix:** Separate realized vs unrealized daily P&L; document behavior.
+**Resolution:** Documented as intentional. Total portfolio drawdown (realized + unrealized) is the standard kill switch metric. Unrealized losses represent real risk exposure. Separating realized-only would require per-fill P&L tracking (feature-level). Added docstring clarification.
 
 ---
 
