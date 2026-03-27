@@ -28,9 +28,9 @@ def check_position_size(
         # BUG-30 fix: reject when equity/price unavailable instead of blindly allowing
         return False, "Cannot evaluate position size: equity or price unavailable"
 
-    # Estimate position value from signal strength and current price
-    # strength is 0.0–1.0 sizing hint; multiply by equity for estimated position value
-    estimated_value = signal.strength * total_equity
+    # BUG-68 fix: use same sizing formula as RiskManager._signal_to_order()
+    # Actual order notional = equity * max_pct * strength (see risk/manager.py line 178)
+    estimated_value = signal.strength * max_pct * total_equity
     max_allowed = total_equity * max_pct
     if estimated_value > max_allowed:
         return False, (

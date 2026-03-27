@@ -6,159 +6,89 @@
 
 ## CRITICAL
 
-### BUG-44: Redis client null dereference on early disconnect
+### ~~BUG-44: Redis client null dereference on early disconnect~~ ✅ FIXED
 
-**File:** `shared/redis_client.py` — Lines 55, 58, 153, 157, 164
-**Severity:** CRITICAL
-
-`publish()`, `set_flag()`, `get_flag()`, `delete_flag()` don't check if `self._redis is None`. If `disconnect()` fires before these methods return (shutdown race), `AttributeError: 'NoneType' object has no attribute 'publish'` crashes the caller.
-
-**Fix:** Guard all Redis operations with `if self._redis is None: raise RuntimeError(...)`.
+**Fixed in:** commit 75a49c3. Added null guards on all Redis operations.
 
 ---
 
-### BUG-45: DB session null reference in `init_db()`
+### ~~BUG-45: DB session null reference in `init_db()`~~ ✅ FIXED
 
-**File:** `db/session.py` — Line 43
-**Severity:** CRITICAL
-
-`init_db()` calls `_engine.begin()` without checking if `_engine is None`. Crashes if called before `init_engine()`.
-
-**Fix:** Add `if _engine is None: raise RuntimeError(...)`.
+**Fixed in:** commit 756778b. Added null guard on `_engine`.
 
 ---
 
-### BUG-46: Market calendar returns invalid results for years beyond 2027
+### ~~BUG-46: Market calendar returns invalid results for years beyond 2027~~ ✅ FIXED
 
-**File:** `shared/market_calendar.py` — Lines 72–74, 100–106, 134–139
-**Severity:** CRITICAL
-
-`_NYSE_HOLIDAYS` dict only contains 2025–2027. For 2028+, `.get(year, set())` returns empty → treats all holidays as trading days. A call on 2028-01-01 (New Year's) incorrectly thinks market is open.
-
-**Fix:** Dynamically fetch holidays from Alpaca API, or extend dict, or raise on unsupported years.
+**Fixed in:** commit eeacd22. Extended holidays to 2030, added warning for missing years.
 
 ---
 
-### BUG-47: Backtest silently skips early bars when lookback isn't filled
+### ~~BUG-47: Backtest silently skips early bars when lookback isn't filled~~ ✅ FIXED
 
-**File:** `backtest/engine.py` — Lines 370–384, 680–681
-**Severity:** CRITICAL (accuracy)
-
-`_build_data_snapshot()` returns None if any field hasn't accumulated enough lookback. Strategy execution is silently skipped for those bars, biasing backtest results with no user notification.
-
-**Fix:** Log a warning and/or document the skip behavior in backtest results.
+**Fixed in:** commit 06a35bd. Logs warmup phase when backtest skips early bars.
 
 ---
 
-### BUG-48: Unguarded index access in `_run_strategy_cycle()`
+### ~~BUG-48: Unguarded index access in `_run_strategy_cycle()`~~ ✅ FIXED
 
-**File:** `session/manager.py` — Lines 413, 684–685, 725
-**Severity:** CRITICAL
-
-`current_prices[i]` and `prices[i]` accessed without validating array length matches `pipeline.executor.symbols`. If symbol list changed mid-session (via `update_session()`), crashes with `IndexError`.
-
-**Fix:** Add `if prices is None or len(prices) != len(symbols): return` before accessing.
+**Fixed in:** commit 8fa3944. Added array length validation before index access.
 
 ---
 
-### BUG-49: Race condition — `del self._pipelines[session_id]` in `stop_session()`
+### ~~BUG-49: Race condition — `del self._pipelines[session_id]` in `stop_session()`~~ ✅ FIXED
 
-**File:** `session/manager.py` — Lines 299 vs 330
-**Severity:** CRITICAL
-
-Line 299 uses safe `self._pipelines.pop(session_id, None)`, but line 330 uses `del self._pipelines[session_id]`. Double `stop_session()` call (or call after `start_session()` failure) raises `KeyError`.
-
-**Fix:** Use `.pop(session_id, None)` consistently.
+**Fixed in:** commit d09c426. Uses `.pop()` consistently instead of `del`.
 
 ---
 
-### BUG-50: NaN propagation in `momentum_v2.py` silently zeros out all weights
+### ~~BUG-50: NaN propagation in `momentum_v2.py` silently zeros out all weights~~ ✅ FIXED
 
-**File:** `strategy/examples/momentum_v2.py` — Lines 27–41
-**Severity:** CRITICAL
-
-If any price in the lookback window is NaN: `mean()` → NaN, `deviation` → NaN, `deviation.min()` → NaN, `shifted` → all NaN, `total` → NaN (≠ 0), `weights = NaN / NaN`. Executor converts to all-zero weights with no warning.
-
-**Fix:** Use `np.nanmean()`, or check `np.any(np.isnan(prices))` and return equal weights or zeros with a warning.
+**Fixed in:** commit 6ac3055. Added NaN handling in default momentum strategy.
 
 ---
 
-### BUG-51: Binance `fetch_history()` unchecked kline array indexing
+### ~~BUG-51: Binance `fetch_history()` unchecked kline array indexing~~ ✅ FIXED
 
-**File:** `data/sources/binance_source.py` — Lines 211–213
-**Severity:** CRITICAL
-
-Assumes kline arrays always have ≥9 elements. If API returns truncated data, `IndexError` crashes the entire backfill process.
-
-**Fix:** Validate `len(k) >= 9` before unpacking.
+**Fixed in:** commit cdb01cd. Added kline array length validation.
 
 ---
 
-### BUG-52: Binance `_fetch_book()` empty orderbook array crash
+### ~~BUG-52: Binance `_fetch_book()` empty orderbook array crash~~ ✅ FIXED
 
-**File:** `data/sources/binance_source.py` — Lines 121–122
-**Severity:** CRITICAL
-
-Checks `if book.get("bids")` but empty list `[]` is truthy. During low liquidity, `bids[0][0]` crashes with `IndexError`.
-
-**Fix:** Check `if bids and len(bids) > 0`.
+**Fixed in:** commit cdb01cd. Added proper empty list checks for orderbook data.
 
 ---
 
-### BUG-53: Zero/negative prices silently skipped in rebalancer
+### ~~BUG-53: Zero/negative prices silently skipped in rebalancer~~ ✅ FIXED
 
-**File:** `strategy/rebalancer.py` — Lines 63–64
-**Severity:** CRITICAL
-
-Assets with price ≤ 0 silently skipped — no order generated, no logging. Portfolio allocation drifts from target without operator awareness.
-
-**Fix:** Log a warning when skipping a symbol due to invalid price.
+**Fixed in:** commit d91757c. Rebalancer validates equity and prices with logging.
 
 ---
 
 ## HIGH
 
-### BUG-54: Negative/zero `total_equity` not validated in rebalancer
+### ~~BUG-54: Negative/zero `total_equity` not validated in rebalancer~~ ✅ FIXED
 
-**File:** `strategy/rebalancer.py` — Lines 31–50
-**Severity:** HIGH
-
-With negative equity, `target_value = weight * negative_equity` → generates sell orders larger than holdings. With zero equity, all target values are 0 → silent no-op.
-
-**Fix:** Return empty orders and log error if `total_equity <= 0`.
+**Fixed in:** commit d91757c. Returns empty orders and logs error for non-positive equity.
 
 ---
 
-### BUG-55: Router publishes unfilled OrderUpdate immediately after `place_order`
+### ~~BUG-55: Router publishes unfilled OrderUpdate immediately after `place_order`~~ ✅ FIXED
 
-**File:** `execution/router.py` — Lines 134–146
-**Severity:** HIGH
-
-`OrderUpdate` published with `filled_qty=0`, `avg_price=0` before polling catches actual fill. Races the 10-second polling loop, causing dashboard flicker.
-
-**Fix:** Query actual status from adapter immediately after place_order before publishing.
+**Fixed in:** commit 488d1df (BUG-58). Added immediate status query after `place_order` (router.py lines 124-138). Market orders that fill instantly are detected before publishing the OrderUpdate.
 
 ---
 
-### BUG-56: SimAdapter BUY with zero clipped quantity
+### ~~BUG-56: SimAdapter BUY with zero clipped quantity~~ ✅ FIXED
 
-**File:** `execution/sim_adapter.py` — Lines 107–120
-**Severity:** HIGH
-
-If cash clips quantity to near-zero, avg_price computation can be unstable. The `if quantity <= 0: raise` guard exists but threshold should match position cleanup threshold (0.0001).
-
-**Fix:** Use `if quantity < 0.0001: raise ValueError(...)`.
+**Fixed in:** commit 4ae59f1. Rejects dust quantities below 0.0001 threshold.
 
 ---
 
-### BUG-57: Binance adapter silent cancel failure
+### ~~BUG-57: Binance adapter silent cancel failure~~ ✅ FIXED
 
-**File:** `execution/binance_adapter.py` — Lines 93–107
-**Severity:** HIGH
-
-If `_order_symbols` map loses the symbol (adapter restart), `cancel_order()` returns `False` silently. Caller doesn't check — order remains open on exchange.
-
-**Fix:** Raise exception instead of returning False.
+**Fixed in:** commit 4351c33. Raises exception instead of returning False.
 
 ---
 
@@ -168,111 +98,63 @@ If `_order_symbols` map loses the symbol (adapter restart), `cancel_order()` ret
 
 ---
 
-### BUG-59: Extreme strategy weights overflow to infinity → silent all-zero
+### ~~BUG-59: Extreme strategy weights overflow to infinity → silent all-zero~~ ✅ FIXED
 
-**File:** `strategy/executor.py` — Lines 93–104
-**Severity:** HIGH
-
-If strategy returns 1e308 weights, `sum → inf`, `weights / inf → [0, 0, ...]`. Silent signal loss.
-
-**Fix:** Clip weights to reasonable bounds (e.g., ±1e6) before summing.
+**Fixed in:** FEATURE_STRATEGY_MODE commit. `np.clip(weights, -1.0, 1.0)` (executor.py line 95/101) applied before any sum/division, preventing overflow. Extreme values clipped to ±1.0 before normalization.
 
 ---
 
-### BUG-60: Alpaca adapter `filled_avg_price=None` becomes 0
+### ~~BUG-60: Alpaca adapter `filled_avg_price=None` becomes 0~~ ✅ FIXED
 
-**File:** `execution/alpaca_adapter.py` — Line 117
-**Severity:** HIGH
-
-`float(order.filled_avg_price or 0)` — rejected/cancelled orders get avg_price=0. Indistinguishable from a real 0-price fill downstream.
-
-**Fix:** Use `None` sentinel or explicit status check before setting avg_price.
+**Fixed in:** commit 6b724dd. Handles None filled_avg_price safely.
 
 ---
 
-### BUG-61: Short positions excluded from equity calculation
+### ~~BUG-61: Short positions excluded from equity calculation~~ ✅ FIXED
 
-**File:** `portfolio/tracker.py` — Lines 215–242
-**Severity:** HIGH
-
-`get_total_equity()`, `get_positions_value()`, `get_all_positions()` all filter with `if pos["quantity"] > 0`. Short positions (negative qty) are excluded → equity overstated, risk checks incomplete.
-
-**Fix:** Change filter to `if abs(pos["quantity"]) > 0.0001` or `if pos["quantity"] != 0`.
+**Fixed in:** commit 0353997. Includes short positions in equity and position queries.
 
 ---
 
-### BUG-62: DB commit not explicitly awaited in tracker persistence
+### ~~BUG-62: DB commit not explicitly awaited in tracker persistence~~ ✅ FIXED
 
-**File:** `portfolio/tracker.py` — Lines 295–305, 312–341
-**Severity:** HIGH
-
-`session.add()` called but `session.commit()` never explicitly awaited. Relies on context manager auto-commit. If DB error occurs after add but before exit, partial writes are silently lost.
-
-**Fix:** Add explicit `await session.commit()` after `session.add()`.
+**Resolution:** `get_session()` context manager (db/session.py line 57) explicitly does `await session.commit()` on normal exit and `await session.rollback()` on exception. All callers use `async with get_session()`, so commit is always awaited. No code change needed — original analysis missed the context manager implementation.
 
 ---
 
-### BUG-63: Redis `get_flag()` crashes on malformed JSON
+### ~~BUG-63: Redis `get_flag()` crashes on malformed JSON~~ ✅ FIXED
 
-**File:** `shared/redis_client.py` — Lines 155–160
-**Severity:** HIGH
-
-`json.loads(raw)` with no try-except. Corrupted Redis data crashes all callers (kill switch checks, portfolio state reads).
-
-**Fix:** Wrap in `try/except json.JSONDecodeError`, log and return None.
+**Fixed in:** commit 75a49c3. Added try-except for JSONDecodeError, returns None.
 
 ---
 
-### BUG-64: `Order.avg_price` nullable but typed as `float`
+### ~~BUG-64: `Order.avg_price` nullable but typed as `float`~~ ✅ FIXED
 
-**File:** `db/models.py` — Line 124
-**Severity:** HIGH
-
-Column is `nullable=True` but Python type is `Mapped[float]`. DB can return None → downstream `TypeError` on arithmetic.
-
-**Fix:** Use `Mapped[float | None]` or set `nullable=False`.
+**Fixed in:** commit ac36890. Changed to `Mapped[float | None]`.
 
 ---
 
-### BUG-65: Backfill failure silently ignored — strategy runs on empty buffers
+### ~~BUG-65: Backfill failure silently ignored — strategy runs on empty buffers~~ ✅ FIXED
 
-**File:** `data/collector.py` — Lines 265–300
-**Severity:** HIGH
-
-If `fetch_history()` fails, a WARNING is logged and live loop fills naturally. But strategy may fire before buffers have enough data, using partial/stale data.
-
-**Fix:** Track fill level explicitly; don't fire strategy until minimum threshold met.
+**Fixed in:** commit a2c7f71. Tracks and reports backfill failures with proper severity.
 
 ---
 
-### BUG-66: Binance VWAP division by zero fallback uses potentially-zero close
+### ~~BUG-66: Binance VWAP division by zero fallback uses potentially-zero close~~ ✅ FIXED
 
-**File:** `data/sources/binance_source.py` — Line 229
-**Severity:** HIGH
-
-`(quote_vol / v) if v > 0 else c` — if close `c` is also 0 or NaN, VWAP is 0/NaN. Breaks rebalancing.
-
-**Fix:** Chain fallback: try quote_vol/v, then c, then log warning if both fail.
+**Fixed in:** commit cdb01cd. Added chained fallback with warning.
 
 ---
 
-### BUG-67: YFinance `_fetch_fast_info_fallback()` percent-change division by zero
+### ~~BUG-67: YFinance `_fetch_fast_info_fallback()` percent-change division by zero~~ ✅ FIXED
 
-**File:** `data/sources/yfinance_source.py` — Lines 186–187
-**Severity:** HIGH
-
-`if prev_close and prev_close > 0` uses Python truthiness (False for 0.0 **and** None). Should be explicit `if prev_close is not None and prev_close > 0`.
+**Fixed in:** commit 5d18b1e. Uses explicit None check for prev_close.
 
 ---
 
-### BUG-68: Position size check uses signal strength instead of actual notional (V1)
+### ~~BUG-68: Position size check uses signal strength instead of actual notional (V1)~~ ✅ FIXED
 
-**File:** `risk/limits.py` — Lines 31–34
-**Severity:** HIGH
-
-`estimated_value = signal.strength * total_equity` doesn't match actual order sizing logic in `risk/manager.py`. Risk check is bypassed by low-strength signals.
-
-**Fix:** Use same sizing formula as `_signal_to_order()` for the check.
+**Fixed in:** BUG-68 commit. Changed `estimated_value` to `signal.strength * max_pct * total_equity` matching `_signal_to_order()` formula. Previously overestimated by 1/max_pct (10x), wrongly rejecting legitimate signals with strength > 0.10.
 
 ---
 
@@ -366,12 +248,9 @@ If `max(price, 0.01)` is 0.01 (micro price), quantity explodes. If `total_equity
 
 ---
 
-### BUG-79: Empty symbol list unchecked in DataCollector
+### ~~BUG-79: Empty symbol list unchecked in DataCollector~~ ✅ FIXED
 
-**File:** `data/collector.py` — Line 52
-**Severity:** MEDIUM
-
-`symbols = []` → `n_symbols = 0`, zero-shape buffers, silent no-op. No error message; session appears to work but collects nothing.
+**Fixed in:** commit e744e36. Rejects empty symbol list in DataCollector init.
 
 ---
 
@@ -381,41 +260,27 @@ If `max(price, 0.01)` is 0.01 (micro price), quantity explodes. If `total_equity
 
 ---
 
-### BUG-81: Binance thread pool exceptions swallowed — partial fills silent
+### ~~BUG-81: Binance thread pool exceptions swallowed — partial fills silent~~ ✅ FIXED
 
-**File:** `data/sources/binance_source.py` — Lines 125–135
-**Severity:** MEDIUM
-
-ThreadPoolExecutor catches all exceptions generically. 5/10 symbols succeed, 5 silently return 0.0. No count of failures or warning about incomplete data.
+**Fixed in:** commit 70bfdf0. Counts and reports failed orderbook fetches.
 
 ---
 
-### BUG-82: Alpaca malformed bars silently return zeros
+### ~~BUG-82: Alpaca malformed bars silently return zeros~~ ✅ FIXED
 
-**File:** `data/sources/alpaca_source.py` — Lines 230–243
-**Severity:** MEDIUM
-
-Uses `.get("o", 0)` — missing OHLCV fields default to 0.0. Corrupts backtest data silently.
+**Fixed in:** commit f8e5ee4. Uses NaN instead of 0 for missing OHLC data.
 
 ---
 
-### BUG-83: `OrderRequest.price` not validated for LIMIT orders
+### ~~BUG-83: `OrderRequest.price` not validated for LIMIT orders~~ ✅ FIXED
 
-**File:** `shared/schemas.py` — Lines 81–95
-**Severity:** MEDIUM
-
-`price: Optional[float] = None` with no validator. LIMIT orders with `price=None` crash in execution router.
-
-**Fix:** Add Pydantic validator: if `order_type == LIMIT`, require `price is not None`.
+**Fixed in:** commit 91bc29f. Added Pydantic model_validator for LIMIT price.
 
 ---
 
-### BUG-84: Trade model missing unique constraint on `(session_id, order_id)`
+### ~~BUG-84: Trade model missing unique constraint on `(session_id, order_id)`~~ ✅ FIXED
 
-**File:** `db/models.py` — Lines 63–87
-**Severity:** MEDIUM
-
-Duplicate trades (from retries) can be inserted without error, corrupting audit trail.
+**Fixed in:** commit 2666e5d. Added unique constraint.
 
 ---
 
@@ -437,12 +302,9 @@ All HTTP calls have fixed timeouts, no retry, no exponential backoff, no 429 han
 
 ---
 
-### BUG-87: Unsupported resolution silently defaults to 1d in yfinance
+### ~~BUG-87: Unsupported resolution silently defaults to 1d in yfinance~~ ✅ FIXED
 
-**File:** `data/sources/yfinance_source.py` — Lines 217–228
-**Severity:** MEDIUM
-
-`res_map.get(resolution, "1d")` — typo like "30sec" silently becomes daily data. Strategy expects 1-min bars but gets 1-day bars.
+**Fixed in:** commit 1e1d24d. Rejects unsupported resolutions instead of defaulting.
 
 ---
 
@@ -474,9 +336,9 @@ All HTTP calls have fixed timeouts, no retry, no exponential backoff, no 429 han
 
 **Fixed in:** commit (BUG-92). Changed equity curve snapshot rounding from 2 to 6 decimal places. ~16,000x reduction in cumulative rounding error over long backtests.
 
-### BUG-93: `MarketCalendar` constructor doesn't validate exchange parameter
+### ~~BUG-93: `MarketCalendar` constructor doesn't validate exchange parameter~~ ✅ FIXED
 
-**File:** `shared/market_calendar.py` — Lines 51–53 — New exchanges default to equity hours silently.
+**Fixed in:** commit 917e5c9. Warns on unknown exchange in constructor.
 
 ### ~~BUG-94: Pydantic models allow negative prices/volumes/quantities~~ ✅ FIXED
 

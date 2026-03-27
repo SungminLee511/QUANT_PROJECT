@@ -46,12 +46,20 @@ class TestPositionSize:
         approved, reason = check_position_size(small_signal, state, risk_config)
         assert approved is True
 
-    def test_rejects_oversized(self, buy_signal, risk_config):
-        """Signal strength 0.8 → 80% of equity, exceeds 10% limit."""
+    def test_approves_strength_below_one(self, buy_signal, risk_config):
+        """BUG-68 fix: strength=0.8 → notional = 0.8 * 0.10 * equity = 8%, under 10%."""
         state = {"total_equity": 10000, "prices": {"BTCUSDT": 50000}}
         approved, reason = check_position_size(buy_signal, state, risk_config)
-        assert approved is False
-        assert "exceed" in reason.lower()
+        assert approved is True
+
+    def test_max_strength_at_boundary(self, risk_config):
+        """BUG-68: strength=1.0 → notional = 1.0 * 0.10 * equity = exactly max_pct, not exceeded."""
+        max_signal = TradeSignal(
+            symbol="BTCUSDT", signal=Signal.BUY, strength=1.0, strategy_id="test",
+        )
+        state = {"total_equity": 10000, "prices": {"BTCUSDT": 50000}}
+        approved, reason = check_position_size(max_signal, state, risk_config)
+        assert approved is True  # Exactly at limit, not over
 
     def test_no_equity_rejects(self, buy_signal, risk_config):
         """BUG-30: zero equity should reject, not blindly allow."""
