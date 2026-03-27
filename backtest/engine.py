@@ -725,9 +725,9 @@ def run_backtest(
                             equity = portfolio.get_equity()
                             result.equity_curve.append({
                                 "date": date_str,
-                                "equity": round(equity, 2),
-                                "cash": round(portfolio.cash, 2),
-                                "positions_value": round(portfolio.get_positions_value(), 2),
+                                "equity": round(equity, 6),
+                                "cash": round(portfolio.cash, 6),
+                                "positions_value": round(portfolio.get_positions_value(), 6),
                             })
                             result.metrics = _compute_metrics(result.equity_curve, result.trades, starting_cash, portfolio.total_fees)
                             result.success = True
@@ -740,9 +740,9 @@ def run_backtest(
         equity = portfolio.get_equity()
         result.equity_curve.append({
             "date": date_str,
-            "equity": round(equity, 2),
-            "cash": round(portfolio.cash, 2),
-            "positions_value": round(portfolio.get_positions_value(), 2),
+            "equity": round(equity, 6),
+            "cash": round(portfolio.cash, 6),
+            "positions_value": round(portfolio.get_positions_value(), 6),
         })
 
     # 7. Compute metrics

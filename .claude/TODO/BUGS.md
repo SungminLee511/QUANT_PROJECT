@@ -481,9 +481,9 @@ All HTTP calls have fixed timeouts, no retry, no exponential backoff, no 429 han
 
 **Fixed in:** commit (BUG-91). Added `UniqueConstraint("session_id", "timestamp")` to EquitySnapshot model + Alembic migration 003.
 
-### BUG-92: Backtest equity curve rounded to 2 decimals
+### ~~BUG-92: Backtest equity curve rounded to 2 decimals~~ ✅ FIXED
 
-**File:** `backtest/engine.py` — Lines 703–708 — Cumulative rounding error over thousands of bars.
+**Fixed in:** commit (BUG-92). Changed equity curve snapshot rounding from 2 to 6 decimal places. ~16,000x reduction in cumulative rounding error over long backtests.
 
 ### BUG-93: `MarketCalendar` constructor doesn't validate exchange parameter
 
