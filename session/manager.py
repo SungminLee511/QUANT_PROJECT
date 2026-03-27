@@ -209,7 +209,11 @@ class SessionManager:
             if ts is None:
                 return False
 
-            config_data = json.loads(ts.config_json or "{}")
+            try:
+                config_data = json.loads(ts.config_json or "{}")
+            except (json.JSONDecodeError, TypeError):
+                logger.warning("Corrupt config_json for session %s, using empty config", session_id)
+                config_data = {}
 
             if "name" in kwargs and kwargs["name"] is not None:
                 ts.name = kwargs["name"]
@@ -369,7 +373,16 @@ class SessionManager:
         # 1. Strategy Executor
         executor = StrategyExecutor(sid, symbols, strategy_mode=pipeline.strategy_mode)
         if strategy_code:
-            executor.load_strategy(strategy_code)
+            try:
+                executor.load_strategy(strategy_code)
+            except Exception as e:
+                logger.error("Session %s: strategy load failed: %s", sid, e, exc_info=True)
+                await self._publish_log(
+                    sid, "strategy_error",
+                    f"Strategy code failed to load: {e}",
+                    level="error",
+                )
+                raise
         pipeline.executor = executor
 
         # 2. Weight Rebalancer
@@ -871,7 +884,11 @@ class SessionManager:
             mask_secrets: If True, mask api_key/api_secret in the returned config.
                           Set to False for internal use (e.g. starting pipelines).
         """
-        config_data = json.loads(ts.config_json or "{}")
+        try:
+            config_data = json.loads(ts.config_json or "{}")
+        except (json.JSONDecodeError, TypeError):
+            logger.warning("Corrupt config_json for session %s, using empty config", ts.id)
+            config_data = {}
 
         # Parse data_config
         data_config = None
