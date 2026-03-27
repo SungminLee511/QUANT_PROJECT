@@ -44,9 +44,10 @@ DEFAULT_DATA_CONFIG = {
     "schedule_mode": "always_on",
     "strategy_mode": "rebalance",
     "short_loss_limit_pct": 1.0,
+    "max_daily_loss_pct": 0.03,
     "commission_pct": 0.0,
     "fields": {
-        "price": {"enabled": True, "lookback": 20, "source": "yfinance"},
+        "price": {"enabled": True, "lookback": 20},
     },
     "custom_data": [],
     "custom_global_data": [],
@@ -614,6 +615,13 @@ class SessionManager:
             # 1. Run strategy
             weights = pipeline.executor.execute(data_snapshot)
 
+            if len(weights) != len(pipeline.executor.symbols):
+                logger.error(
+                    "Session %s: strategy returned %d weights but %d symbols — skipping cycle",
+                    sid, len(weights), len(pipeline.executor.symbols),
+                )
+                return
+
             await self._publish_log(
                 sid, "strategy_eval",
                 f"Strategy returned weights: {weights.tolist()}",
@@ -624,6 +632,15 @@ class SessionManager:
             prices = pipeline.collector.get_current_prices() if pipeline.collector else None
             if prices is None:
                 logger.debug("Session %s: no current prices, skipping rebalance", sid)
+                return
+
+            # Validate prices array matches symbol count
+            n_symbols = len(pipeline.executor.symbols)
+            if len(prices) != n_symbols:
+                logger.error(
+                    "Session %s: prices array length %d != symbol count %d — skipping cycle",
+                    sid, len(prices), n_symbols,
+                )
                 return
 
             # Get portfolio state for risk checks + rebalancing
@@ -651,6 +668,11 @@ class SessionManager:
                     current_positions[pos["symbol"]] = pos.get("quantity", 0)
 
             # 3. Portfolio risk checks (drawdown + daily loss)
+            #    Override global risk config with per-session data_config value
+            risk_cfg_override = copy.deepcopy(self._config)
+            risk_cfg_override.setdefault("risk", {})["max_daily_loss_pct"] = pipeline.data_config.get(
+                "max_daily_loss_pct", 0.03
+            )
             risk_ok, risk_reason = check_portfolio_risk(
                 {
                     "total_equity": total_equity,
@@ -658,7 +680,7 @@ class SessionManager:
                     "day_start_equity": state.get("day_start_equity", total_equity) if state else total_equity,
                     "daily_pnl": state.get("daily_pnl", 0) if state else 0,
                 },
-                self._config,
+                risk_cfg_override,
             )
             if not risk_ok:
                 # Breach → activate kill switch and flatten all positions
