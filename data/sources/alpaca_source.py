@@ -75,7 +75,9 @@ class AlpacaSource:
                     for sym, trade in data.items():
                         idx = sym_idx.get(sym)
                         if idx is not None:
-                            prices[idx] = float(trade.get("p", 0))
+                            p = trade.get("p")
+                            if p is not None:
+                                prices[idx] = float(p)
                 except Exception:
                     logger.warning("Alpaca latest trades fetch error", exc_info=True)
                 result["price"] = prices
@@ -130,12 +132,14 @@ class AlpacaSource:
                 for sym, bar in data.items():
                     idx = sym_idx.get(sym)
                     if idx is not None:
-                        opens[idx] = float(bar.get("o", 0))
-                        highs[idx] = float(bar.get("h", 0))
-                        lows[idx] = float(bar.get("l", 0))
-                        closes[idx] = float(bar.get("c", 0))
+                        opens[idx] = float(bar["o"]) if "o" in bar else np.nan
+                        highs[idx] = float(bar["h"]) if "h" in bar else np.nan
+                        lows[idx] = float(bar["l"]) if "l" in bar else np.nan
+                        closes[idx] = float(bar["c"]) if "c" in bar else np.nan
                         volumes[idx] = float(bar.get("v", 0))
                         vwaps[idx] = float(bar.get("vw", 0))
+                        if any(np.isnan(x) for x in [opens[idx], closes[idx]]):
+                            logger.warning("Alpaca bar missing OHLC for %s", sym)
             except Exception:
                 logger.warning("Alpaca latest bars fetch error", exc_info=True)
 
@@ -228,15 +232,15 @@ class AlpacaSource:
                 for j, bar in enumerate(recent_bars):
                     col = lookback - take + j
                     if "open" in field_arrays:
-                        field_arrays["open"][idx, col] = float(bar.get("o", 0))
+                        field_arrays["open"][idx, col] = float(bar["o"]) if "o" in bar else np.nan
                     if "high" in field_arrays:
-                        field_arrays["high"][idx, col] = float(bar.get("h", 0))
+                        field_arrays["high"][idx, col] = float(bar["h"]) if "h" in bar else np.nan
                     if "low" in field_arrays:
-                        field_arrays["low"][idx, col] = float(bar.get("l", 0))
+                        field_arrays["low"][idx, col] = float(bar["l"]) if "l" in bar else np.nan
                     if "close" in field_arrays:
-                        field_arrays["close"][idx, col] = float(bar.get("c", 0))
+                        field_arrays["close"][idx, col] = float(bar["c"]) if "c" in bar else np.nan
                     if "price" in field_arrays:
-                        field_arrays["price"][idx, col] = float(bar.get("c", 0))
+                        field_arrays["price"][idx, col] = float(bar["c"]) if "c" in bar else np.nan
                     if "volume" in field_arrays:
                         field_arrays["volume"][idx, col] = float(bar.get("v", 0))
                     if "vwap" in field_arrays:
