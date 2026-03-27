@@ -43,15 +43,15 @@ class BinanceSource:
 
         # 1. Fetch 24hr ticker stats (gives price, OHLCV, volume, trades count, etc.)
         if needs_24hr:
-            prices = np.zeros(n, dtype=np.float64)
-            opens = np.zeros(n, dtype=np.float64)
-            highs = np.zeros(n, dtype=np.float64)
-            lows = np.zeros(n, dtype=np.float64)
-            closes = np.zeros(n, dtype=np.float64)
+            prices = np.full(n, np.nan, dtype=np.float64)
+            opens = np.full(n, np.nan, dtype=np.float64)
+            highs = np.full(n, np.nan, dtype=np.float64)
+            lows = np.full(n, np.nan, dtype=np.float64)
+            closes = np.full(n, np.nan, dtype=np.float64)
             volumes = np.zeros(n, dtype=np.float64)
-            vwaps = np.zeros(n, dtype=np.float64)
+            vwaps = np.full(n, np.nan, dtype=np.float64)
             num_trades = np.zeros(n, dtype=np.float64)
-            day_change = np.zeros(n, dtype=np.float64)
+            day_change = np.full(n, np.nan, dtype=np.float64)
 
             try:
                 # Use the multi-symbol 24hr ticker endpoint
@@ -73,15 +73,21 @@ class BinanceSource:
                     if idx is None:
                         continue
 
-                    prices[idx] = float(item.get("lastPrice", 0))
-                    opens[idx] = float(item.get("openPrice", 0))
-                    highs[idx] = float(item.get("highPrice", 0))
-                    lows[idx] = float(item.get("lowPrice", 0))
-                    closes[idx] = float(item.get("lastPrice", 0))
+                    _lp = item.get("lastPrice")
+                    prices[idx] = float(_lp) if _lp is not None else np.nan
+                    _op = item.get("openPrice")
+                    opens[idx] = float(_op) if _op is not None else np.nan
+                    _hp = item.get("highPrice")
+                    highs[idx] = float(_hp) if _hp is not None else np.nan
+                    _lwp = item.get("lowPrice")
+                    lows[idx] = float(_lwp) if _lwp is not None else np.nan
+                    closes[idx] = float(_lp) if _lp is not None else np.nan
                     volumes[idx] = float(item.get("volume", 0))
-                    vwaps[idx] = float(item.get("weightedAvgPrice", 0))
+                    _vwap = item.get("weightedAvgPrice")
+                    vwaps[idx] = float(_vwap) if _vwap is not None else np.nan
                     num_trades[idx] = float(item.get("count", 0))
-                    day_change[idx] = float(item.get("priceChangePercent", 0))
+                    _dc = item.get("priceChangePercent")
+                    day_change[idx] = float(_dc) if _dc is not None else np.nan
 
             except Exception:
                 logger.warning("Binance 24hr ticker fetch error", exc_info=True)

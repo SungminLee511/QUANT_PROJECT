@@ -391,12 +391,9 @@ If Redis key missing, `get_flag()` returns None → `if state:` fails → `_port
 
 ---
 
-### BUG-80: Missing data filled with 0.0 instead of NaN across all sources
+### ~~BUG-80: Missing data filled with 0.0 instead of NaN across all sources~~ ✅ FIXED
 
-**Files:** `yfinance_source.py`, `alpaca_source.py`, `binance_source.py` — various
-**Severity:** MEDIUM
-
-All sources default to `0.0` for missing fields. Price=0 breaks P&L, percent-change, and rebalancing. Should use `np.nan`.
+**Fixed in:** commit (BUG-80). All three sources now use `np.nan` for missing price/OHLC/VWAP fields. Volume and trade counts remain 0 (valid default). Covers initial arrays, per-item parsing, fundamentals, and history.
 
 ---
 

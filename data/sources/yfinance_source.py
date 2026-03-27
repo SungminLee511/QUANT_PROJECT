@@ -61,7 +61,7 @@ class YFinanceSource:
         # ── Fundamentals: per-symbol ticker.info (no batch API available) ──
         if fundamental_fields:
             for field_name in fundamental_fields:
-                values = np.zeros(n, dtype=np.float64)
+                values = np.full(n, np.nan, dtype=np.float64)
                 for i, sym in enumerate(symbols):
                     try:
                         info = yf.Ticker(sym).info or {}
@@ -71,7 +71,9 @@ class YFinanceSource:
                             "week52_high": "fiftyTwoWeekHigh",
                             "week52_low": "fiftyTwoWeekLow",
                         }
-                        values[i] = float(info.get(info_map[field_name], 0) or 0)
+                        raw = info.get(info_map[field_name])
+                        if raw is not None:
+                            values[i] = float(raw)
                     except Exception:
                         logger.warning("yfinance fundamental fetch error for %s/%s", sym, field_name, exc_info=True)
                 result[field_name] = values
@@ -151,10 +153,13 @@ class YFinanceSource:
         import yfinance as yf
 
         n = len(symbols)
-        # Initialize arrays
+        # Initialize arrays — NaN for price fields, zero for volume
         for field_name in fields:
             if field_name not in result:
-                result[field_name] = np.zeros(n, dtype=np.float64)
+                if field_name == "volume":
+                    result[field_name] = np.zeros(n, dtype=np.float64)
+                else:
+                    result[field_name] = np.full(n, np.nan, dtype=np.float64)
 
         for i, symbol in enumerate(symbols):
             try:
@@ -164,24 +169,30 @@ class YFinanceSource:
                 except Exception:
                     fi = None
                 if fi is None:
-                    logger.debug("fast_info returned None for %s, using fallback zeros", symbol)
+                    logger.debug("fast_info returned None for %s, using NaN defaults", symbol)
                     fi = {}
 
-                price = float(fi.get("lastPrice", 0) or fi.get("last_price", 0) or 0)
-                prev_close = float(fi.get("previousClose", 0) or fi.get("previous_close", 0) or 0)
+                _last = fi.get("lastPrice") or fi.get("last_price")
+                price = float(_last) if _last is not None else np.nan
+                _prev = fi.get("previousClose") or fi.get("previous_close")
+                prev_close = float(_prev) if _prev is not None else np.nan
 
                 if "price" in fields:
                     result["price"][i] = price
                 if "open" in fields:
-                    result["open"][i] = float(fi.get("open", 0) or 0)
+                    _o = fi.get("open")
+                    result["open"][i] = float(_o) if _o is not None else np.nan
                 if "high" in fields:
-                    result["high"][i] = float(fi.get("dayHigh", 0) or fi.get("day_high", 0) or 0)
+                    _h = fi.get("dayHigh") or fi.get("day_high")
+                    result["high"][i] = float(_h) if _h is not None else np.nan
                 if "low" in fields:
-                    result["low"][i] = float(fi.get("dayLow", 0) or fi.get("day_low", 0) or 0)
+                    _l = fi.get("dayLow") or fi.get("day_low")
+                    result["low"][i] = float(_l) if _l is not None else np.nan
                 if "close" in fields:
                     result["close"][i] = price
                 if "volume" in fields:
-                    result["volume"][i] = float(fi.get("lastVolume", 0) or fi.get("last_volume", 0) or 0)
+                    _v = fi.get("lastVolume") or fi.get("last_volume")
+                    result["volume"][i] = float(_v) if _v is not None else 0.0
                 if "day_change_pct" in fields:
                     if prev_close is not None and prev_close > 0:
                         result["day_change_pct"][i] = ((price - prev_close) / prev_close) * 100
@@ -349,8 +360,9 @@ class YFinanceSource:
                             "week52_high": "fiftyTwoWeekHigh",
                             "week52_low": "fiftyTwoWeekLow",
                         }
-                        val = float(info.get(info_map[field_name], 0) or 0)
-                        arr[i, :] = val
+                        raw = info.get(info_map[field_name])
+                        if raw is not None:
+                            arr[i, :] = float(raw)
                     except Exception:
                         logger.warning("yfinance history fundamental error for %s/%s", sym, field_name)
                 result[field_name] = arr

@@ -62,7 +62,7 @@ class AlpacaSource:
         if needs_live:
             # Latest trades (for price)
             if "price" in fields_to_fetch:
-                prices = np.zeros(n, dtype=np.float64)
+                prices = np.full(n, np.nan, dtype=np.float64)
                 try:
                     symbols_param = ",".join(symbols)
                     resp = self._session.get(
@@ -84,8 +84,8 @@ class AlpacaSource:
 
             # Latest quotes (for bid, ask, spread)
             if fields_to_fetch & {"bid", "ask", "spread"}:
-                bids = np.zeros(n, dtype=np.float64)
-                asks = np.zeros(n, dtype=np.float64)
+                bids = np.full(n, np.nan, dtype=np.float64)
+                asks = np.full(n, np.nan, dtype=np.float64)
                 try:
                     symbols_param = ",".join(symbols)
                     resp = self._session.get(
@@ -98,8 +98,12 @@ class AlpacaSource:
                     for sym, quote in data.items():
                         idx = sym_idx.get(sym)
                         if idx is not None:
-                            bids[idx] = float(quote.get("bp", 0))
-                            asks[idx] = float(quote.get("ap", 0))
+                            _bp = quote.get("bp")
+                            _ap = quote.get("ap")
+                            if _bp is not None:
+                                bids[idx] = float(_bp)
+                            if _ap is not None:
+                                asks[idx] = float(_ap)
                 except Exception:
                     logger.warning("Alpaca latest quotes fetch error", exc_info=True)
 
@@ -113,12 +117,12 @@ class AlpacaSource:
         # 2. Fetch daily data (latest bar)
         if needs_daily:
             daily_fields = fields_to_fetch & self.DAILY_FIELDS
-            opens = np.zeros(n, dtype=np.float64)
-            highs = np.zeros(n, dtype=np.float64)
-            lows = np.zeros(n, dtype=np.float64)
-            closes = np.zeros(n, dtype=np.float64)
+            opens = np.full(n, np.nan, dtype=np.float64)
+            highs = np.full(n, np.nan, dtype=np.float64)
+            lows = np.full(n, np.nan, dtype=np.float64)
+            closes = np.full(n, np.nan, dtype=np.float64)
             volumes = np.zeros(n, dtype=np.float64)
-            vwaps = np.zeros(n, dtype=np.float64)
+            vwaps = np.full(n, np.nan, dtype=np.float64)
 
             try:
                 symbols_param = ",".join(symbols)
@@ -136,8 +140,12 @@ class AlpacaSource:
                         highs[idx] = float(bar["h"]) if "h" in bar else np.nan
                         lows[idx] = float(bar["l"]) if "l" in bar else np.nan
                         closes[idx] = float(bar["c"]) if "c" in bar else np.nan
-                        volumes[idx] = float(bar.get("v", 0))
-                        vwaps[idx] = float(bar.get("vw", 0))
+                        _v = bar.get("v")
+                        if _v is not None:
+                            volumes[idx] = float(_v)
+                        _vw = bar.get("vw")
+                        if _vw is not None:
+                            vwaps[idx] = float(_vw)
                         if any(np.isnan(x) for x in [opens[idx], closes[idx]]):
                             logger.warning("Alpaca bar missing OHLC for %s", sym)
             except Exception:
@@ -242,9 +250,11 @@ class AlpacaSource:
                     if "price" in field_arrays:
                         field_arrays["price"][idx, col] = float(bar["c"]) if "c" in bar else np.nan
                     if "volume" in field_arrays:
-                        field_arrays["volume"][idx, col] = float(bar.get("v", 0))
+                        _v = bar.get("v")
+                        field_arrays["volume"][idx, col] = float(_v) if _v is not None else 0.0
                     if "vwap" in field_arrays:
-                        field_arrays["vwap"][idx, col] = float(bar.get("vw", 0))
+                        _vw = bar.get("vw")
+                        field_arrays["vwap"][idx, col] = float(_vw) if _vw is not None else np.nan
 
             result.update(field_arrays)
 
