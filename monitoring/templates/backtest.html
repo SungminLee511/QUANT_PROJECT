@@ -230,6 +230,8 @@ document.addEventListener('DOMContentLoaded', () => {
     loadStrategyCode();
 });
 
+let _btSessionType = '';  // set by loadStrategyCode from session info
+
 async function loadStrategyCode() {
     const params = new URLSearchParams(window.location.search);
     const sid = params.get('session_id') || '';
@@ -238,6 +240,7 @@ async function loadStrategyCode() {
         const resp = await fetch(url);
         const data = await resp.json();
         editor.setValue(data.code || '');
+        _btSessionType = data.session_type || '';
         // Pre-fill symbols and budget from session if available
         if (data.symbols && data.symbols.length > 0) {
             document.getElementById('btSymbols').value = data.symbols.join(',');
@@ -277,6 +280,10 @@ async function runBacktest() {
         interval: document.getElementById('btInterval').value,
         strategy_mode: document.getElementById('btStrategyMode').value,
         commission_pct: parseFloat(document.getElementById('btCommission').value) || 0,
+        session_type: _btSessionType || (function() {
+            const item = document.querySelector('.session-item.active');
+            return item ? (item.dataset.sessionType || '') : '';
+        })(),
     };
 
     try {
@@ -292,7 +299,8 @@ async function runBacktest() {
 
         if (!data.success) {
             status.className = 'bt-status error';
-            status.textContent = (data.errors || ['Unknown error']).join('\n');
+            const errs = data.errors;
+            status.textContent = Array.isArray(errs) ? errs.join('\n') : String(errs || 'Unknown error');
             return;
         }
 

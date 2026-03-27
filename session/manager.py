@@ -125,6 +125,11 @@ class SessionManager:
         default_code = ""
         if DEFAULT_STRATEGY_PATH.exists():
             default_code = DEFAULT_STRATEGY_PATH.read_text()
+        else:
+            logger.warning(
+                "Default strategy file not found at %s — session will have empty strategy",
+                DEFAULT_STRATEGY_PATH,
+            )
 
         async with get_session() as db:
             ts = TradingSession(
@@ -327,10 +332,12 @@ class SessionManager:
 
         pipeline.running = False
 
-        # Stop collector
+        # Stop collector (with timeout to avoid blocking on hung collector)
         if pipeline.collector:
             try:
-                await pipeline.collector.stop()
+                await asyncio.wait_for(pipeline.collector.stop(), timeout=10.0)
+            except asyncio.TimeoutError:
+                logger.warning("Collector stop timed out for session %s", session_id)
             except Exception:
                 logger.debug("Error stopping collector for session %s", session_id, exc_info=True)
 
