@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from shared.enums import Exchange, OrderStatus, OrderType, SessionType, Side, Signal
 
@@ -83,7 +83,7 @@ class OrderRequest(BaseModel):
 
     symbol: str
     side: Side
-    quantity: float
+    quantity: float = Field(gt=0)
     order_type: OrderType = OrderType.MARKET
     price: Optional[float] = None
     exchange: Exchange
@@ -92,6 +92,12 @@ class OrderRequest(BaseModel):
     session_id: str = ""
     source: str = "risk"
     metadata: dict = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _check_limit_price(self) -> "OrderRequest":
+        if self.order_type == OrderType.LIMIT and (self.price is None or self.price <= 0):
+            raise ValueError("LIMIT orders require a positive price")
+        return self
 
 
 class OrderUpdate(BaseModel):
