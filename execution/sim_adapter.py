@@ -88,12 +88,10 @@ class SimulationAdapter(BaseExchangeAdapter):
                 pos = self._positions.get(symbol, {"quantity": 0.0, "avg_price": 0.0})
 
                 if self._strategy_mode == "long_short" and pos["quantity"] < 0:
-                    # Covering a short — cost comes from cash
-                    if cost > self._cash:
-                        quantity = self._cash / price
-                        if quantity < 0.0001:
-                            raise ValueError(f"Insufficient cash to cover short for {symbol}")
-                        cost = price * quantity
+                    # Covering a short — don't cap by cash.  The trader is
+                    # obligated to cover; capping makes shorts unclosable
+                    # when cash is depleted, breaking kill-switch flatten.
+                    # Cash can go temporarily negative (margin-like).
                     self._cash -= cost
                     new_qty = pos["quantity"] + quantity
                     if abs(new_qty) <= 0.0001:
