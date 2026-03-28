@@ -241,6 +241,10 @@ class RiskManager:
             )
             return None
 
+        # R3-11: "hold" signals should not generate orders.
+        # Previously the ternary mapped hold → SELL, liquidating positions.
+        if signal.signal.value == "hold":
+            return None
         side = Side.BUY if signal.signal.value == "buy" else Side.SELL
 
         return OrderRequest(
