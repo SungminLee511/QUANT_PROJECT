@@ -105,6 +105,24 @@ class OrderRouter:
         if adapter is None:
             logger.error("No adapter for exchange %s (session=%s)", request.exchange.value, self._session_id)
             order.transition(OrderStatus.FAILED)
+            # R4-3: Publish FAILED update and persist, matching the place_order
+            # exception handler. Previously this silently dropped the order.
+            await self._persist_order(order)
+            fail_update = OrderUpdate(
+                order_id=order_id,
+                symbol=request.symbol,
+                side=request.side,
+                status=OrderStatus.FAILED,
+                exchange=request.exchange,
+                session_id=self._session_id,
+            )
+            await self._redis.publish(self._update_channel, fail_update)
+            await self._publish_log(
+                "order_failed", request.symbol,
+                f"FAILED {request.side.value.upper()} {request.symbol} — no adapter for {request.exchange.value}",
+                level="error",
+                metadata={"side": request.side.value, "quantity": request.quantity, "order_id": order_id},
+            )
             return
 
         # Place order
