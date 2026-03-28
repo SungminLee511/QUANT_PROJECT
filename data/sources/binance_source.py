@@ -204,6 +204,18 @@ class BinanceSource:
         for f in bar_fields:
             field_arrays[f] = np.full((n, lookback), np.nan, dtype=np.float64)
 
+        # R3-7: If day_change_pct requested but close/price not, we still need
+        # close data to derive it.  Build a temp array populated during kline parse.
+        needs_temp_close = (
+            "day_change_pct" in field_arrays
+            and "close" not in field_arrays
+            and "price" not in field_arrays
+        )
+        if needs_temp_close:
+            self._close_cache = np.full((n, lookback), np.nan, dtype=np.float64)
+        else:
+            self._close_cache = None
+
         # Fetch klines per symbol (no multi-symbol klines endpoint)
         for symbol in symbols:
             idx = sym_idx[symbol]
@@ -262,12 +274,18 @@ class BinanceSource:
                             logger.warning("VWAP fallback: zero volume and zero close for %s bar %d", symbol, j)
                     if "num_trades" in field_arrays:
                         field_arrays["num_trades"][idx, col] = trades
+                    if self._close_cache is not None:
+                        self._close_cache[idx, col] = c
             except Exception:
                 logger.warning("Binance klines fetch error for %s", symbol, exc_info=True)
 
         # Compute day_change_pct as bar-over-bar close change (matches yfinance behavior)
         if "day_change_pct" in field_arrays:
             close_arr = field_arrays.get("close") if field_arrays.get("close") is not None else field_arrays.get("price")
+            # R3-7: If close/price weren't co-requested, build a temp close array
+            # from the already-fetched klines stored in _close_cache.
+            if close_arr is None and hasattr(self, "_close_cache"):
+                close_arr = self._close_cache
             if close_arr is not None:
                 dcp = field_arrays["day_change_pct"]
                 for i in range(n):
