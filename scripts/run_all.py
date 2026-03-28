@@ -6,15 +6,12 @@ import signal
 import uvicorn
 
 from shared.config import load_config
-from shared.redis_client import create_redis_client
 from monitoring.logger import setup_logging
-from db.session import init_engine, init_db, close_db
 from monitoring.app import create_app
-from session.manager import SessionManager
 
 
-async def run_web(config, redis, session_manager):
-    app = create_app(config, redis, session_manager)
+async def run_web(config):
+    app = create_app(config)
     dash_cfg = config.get("monitoring", {}).get("dashboard", {})
     host = dash_cfg.get("host", "0.0.0.0")
     port = dash_cfg.get("port", 8080)
@@ -27,20 +24,10 @@ async def main():
     config = load_config()
     setup_logging(config)
 
-    # Initialize DB
-    init_engine(config)
-    await init_db()
-
-    # Initialize Redis
-    redis = create_redis_client(config)
-    await redis.connect()
-
-    # Create session manager
-    session_manager = SessionManager(config, redis)
-
-    # Run web server (session manager lives inside FastAPI's lifespan)
+    # create_app() handles DB init, Redis, and SessionManager via its lifespan.
+    # No need to initialise them here — that caused double-initialisation.
     tasks = [
-        asyncio.create_task(run_web(config, redis, session_manager), name="web"),
+        asyncio.create_task(run_web(config), name="web"),
     ]
 
     shutdown_event = asyncio.Event()
@@ -55,14 +42,9 @@ async def main():
     print("All services started. Press Ctrl+C to stop.")
     await shutdown_event.wait()
 
-    # Cleanup
-    await session_manager.stop_all()
-
     for task in tasks:
         task.cancel()
 
-    await redis.disconnect()
-    await close_db()
     print("Shutdown complete.")
 
 
