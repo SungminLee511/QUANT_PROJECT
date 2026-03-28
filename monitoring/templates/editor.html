@@ -863,7 +863,7 @@ def main(data: dict) -> np.ndarray:
     // Called by base.html when session changes
     function onSessionChange(sessionId) {
         // Update session type from sidebar data attribute
-        const item = sessionId ? document.querySelector(`.session-item[data-id="${sessionId}"]`) : null;
+        const item = sessionId ? document.querySelector(`.session-item[data-id="${CSS.escape(sessionId)}"]`) : null;
         _sessionType = item ? (item.dataset.sessionType || '') : '';
         updateEditorLabel();
         loadEditorData();

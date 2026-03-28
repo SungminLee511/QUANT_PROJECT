@@ -151,7 +151,7 @@
     function updateBanner() {
         const banner = document.getElementById('sessionBanner');
         if (currentSessionId) {
-            const item = document.querySelector(`.session-item[data-id="${currentSessionId}"] .s-name`);
+            const item = document.querySelector(`.session-item[data-id="${CSS.escape(currentSessionId)}"] .s-name`);
             const name = item ? item.firstChild.textContent.trim() : currentSessionId;
             document.getElementById('bannerName').textContent = name;
             banner.style.display = 'flex';
