@@ -194,9 +194,11 @@ class YFinanceSource:
                     logger.warning("fast_info returned None for %s, using NaN defaults", symbol)
                     fi = {}
 
-                _last = fi.get("lastPrice") or fi.get("last_price")
+                # R2-14: Use `if x is not None` instead of `or` to avoid
+                # dropping legitimate zero values (e.g. zero volume).
+                _last = fi.get("lastPrice") if fi.get("lastPrice") is not None else fi.get("last_price")
                 price = float(_last) if _last is not None else np.nan
-                _prev = fi.get("previousClose") or fi.get("previous_close")
+                _prev = fi.get("previousClose") if fi.get("previousClose") is not None else fi.get("previous_close")
                 prev_close = float(_prev) if _prev is not None else np.nan
 
                 if "price" in fields:
@@ -205,15 +207,15 @@ class YFinanceSource:
                     _o = fi.get("open")
                     result["open"][i] = float(_o) if _o is not None else np.nan
                 if "high" in fields:
-                    _h = fi.get("dayHigh") or fi.get("day_high")
+                    _h = fi.get("dayHigh") if fi.get("dayHigh") is not None else fi.get("day_high")
                     result["high"][i] = float(_h) if _h is not None else np.nan
                 if "low" in fields:
-                    _l = fi.get("dayLow") or fi.get("day_low")
+                    _l = fi.get("dayLow") if fi.get("dayLow") is not None else fi.get("day_low")
                     result["low"][i] = float(_l) if _l is not None else np.nan
                 if "close" in fields:
                     result["close"][i] = price
                 if "volume" in fields:
-                    _v = fi.get("lastVolume") or fi.get("last_volume")
+                    _v = fi.get("lastVolume") if fi.get("lastVolume") is not None else fi.get("last_volume")
                     result["volume"][i] = float(_v) if _v is not None else 0.0
                 if "day_change_pct" in fields:
                     if prev_close is not None and prev_close > 0:
