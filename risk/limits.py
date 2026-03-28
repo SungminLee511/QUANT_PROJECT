@@ -31,6 +31,11 @@ def check_position_size(
     # FAUDIT-4: Check total position exposure (existing + proposed), not just the
     # proposed order.  The old check compared (strength * max_pct * equity) against
     # (max_pct * equity), which is always true since strength ∈ [0, 1].
+    # R3-12: Only apply the additive check for buy signals.  Sell/close signals
+    # on an at-limit position must NOT be blocked — that traps the position.
+    if signal.signal.value == "sell":
+        return True, ""
+
     proposed_notional = signal.strength * max_pct * total_equity
     # Current position value for this symbol
     position_symbols = portfolio_state.get("position_symbols", set())
