@@ -358,8 +358,9 @@ class YFinanceSource:
                                     series = df[("Close", sym)].dropna().values.astype(np.float64)
                                 else:
                                     series = df["Close"].dropna().values.astype(np.float64)
-                                # Compute pct changes
-                                pct = np.diff(series) / series[:-1] * 100
+                                # Compute pct changes (R6-1: guard against zero denominator)
+                                with np.errstate(divide='ignore', invalid='ignore'):
+                                    pct = np.where(series[:-1] != 0, np.diff(series) / series[:-1] * 100, np.nan)
                                 take = min(len(pct), lookback)
                                 dcp_arr[i, -take:] = pct[-take:]
                             except (KeyError, Exception):
