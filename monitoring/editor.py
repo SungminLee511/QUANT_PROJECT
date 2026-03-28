@@ -240,7 +240,7 @@ def create_editor_router(
             })
         except Exception as e:
             logger.exception("Failed to deploy to session %s", session_id)
-            return JSONResponse({"deployed": False, "errors": [str(e)]})
+            return JSONResponse({"deployed": False, "errors": ["Deploy failed — see server logs"]})
 
     # ── Reset to default ──────────────────────────────────────────────
 
