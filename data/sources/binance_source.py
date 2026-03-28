@@ -138,16 +138,22 @@ class BinanceSource:
             failed_count = 0
             with ThreadPoolExecutor(max_workers=min(n, 10)) as pool:
                 futures = {pool.submit(_fetch_book, sym): sym for sym in symbols}
-                for future in as_completed(futures, timeout=15):
-                    sym = futures[future]
-                    try:
-                        _, bid, ask = future.result(timeout=5)
-                        idx = sym_idx[sym]
-                        bids[idx] = bid
-                        asks[idx] = ask
-                    except Exception:
-                        failed_count += 1
-                        logger.warning("Binance order book fetch error for %s", sym, exc_info=True)
+                try:
+                    for future in as_completed(futures, timeout=15):
+                        sym = futures[future]
+                        try:
+                            _, bid, ask = future.result(timeout=5)
+                            idx = sym_idx[sym]
+                            bids[idx] = bid
+                            asks[idx] = ask
+                        except Exception:
+                            failed_count += 1
+                            logger.warning("Binance order book fetch error for %s", sym, exc_info=True)
+                except TimeoutError:
+                    # R5-4: Harvest already-completed futures; don't discard them
+                    timed_out = sum(1 for f in futures if not f.done())
+                    failed_count += timed_out
+                    logger.warning("Binance orderbook: %d/%d symbols timed out", timed_out, n)
             if failed_count:
                 logger.warning(
                     "Binance orderbook: %d/%d symbols failed — partial data returned",
