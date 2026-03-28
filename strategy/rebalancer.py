@@ -67,7 +67,7 @@ class WeightRebalancer:
 
         for i, symbol in enumerate(self.symbols):
             price = current_prices[i]
-            if price <= 0:
+            if price <= 0 or np.isnan(price):
                 logger.warning(
                     "Session %s: skipping %s — price %.6f is non-positive",
                     self.session_id, symbol, price,
