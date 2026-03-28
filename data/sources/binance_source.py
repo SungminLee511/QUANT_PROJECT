@@ -267,7 +267,7 @@ class BinanceSource:
 
         # Compute day_change_pct as bar-over-bar close change (matches yfinance behavior)
         if "day_change_pct" in field_arrays:
-            close_arr = field_arrays.get("close") or field_arrays.get("price")
+            close_arr = field_arrays.get("close") if field_arrays.get("close") is not None else field_arrays.get("price")
             if close_arr is not None:
                 dcp = field_arrays["day_change_pct"]
                 for i in range(n):

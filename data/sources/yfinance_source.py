@@ -328,7 +328,7 @@ class YFinanceSource:
         # BUG-33 fix: compute day_change_pct per-bar from historical close prices
         if needs_day_change:
             # Ensure we have close data to derive from
-            close_arr = result.get("close") or result.get("price")
+            close_arr = result.get("close") if result.get("close") is not None else result.get("price")
             if close_arr is not None:
                 dcp_arr = np.full((n, lookback), np.nan, dtype=np.float64)
                 for i in range(n):
