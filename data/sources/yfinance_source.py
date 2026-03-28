@@ -214,7 +214,7 @@ class YFinanceSource:
                     result["close"][i] = price
                 if "volume" in fields:
                     _v = fi.get("lastVolume") if fi.get("lastVolume") is not None else fi.get("last_volume")
-                    result["volume"][i] = float(_v) if _v is not None else 0.0
+                    result["volume"][i] = float(_v) if _v is not None else np.nan
                 if "day_change_pct" in fields:
                     # R4-8: Use isnan checks (prev_close is np.nan, not None)
                     if not np.isnan(prev_close) and not np.isnan(price) and prev_close > 0:
