@@ -73,6 +73,7 @@ class SessionPipeline:
         self.portfolio_tracker: PortfolioTracker | None = None
         self.sim_adapter: SimulationAdapter | None = None
         self.running = False
+        self.liquidated = False  # R5-2: Suppress trading after pre-close liquidation
         self.data_config: dict = {}
         # Short position entry prices — for kill switch tracking
         self.short_entry_prices: dict[str, float] = {}
@@ -574,6 +575,7 @@ class SessionManager:
                     ):
                         await self._liquidate_session(pipeline, starting_budget)
                         liquidated_today = True
+                        pipeline.liquidated = True  # R5-2: Suppress strategy until market close
                         from datetime import datetime
                         from zoneinfo import ZoneInfo
                         last_liquidation_date = datetime.now(ZoneInfo("US/Eastern")).date().isoformat()
@@ -590,6 +592,7 @@ class SessionManager:
                     today = datetime.now(ZoneInfo("US/Eastern")).date().isoformat()
                     if last_liquidation_date and today != last_liquidation_date:
                         liquidated_today = False
+                        pipeline.liquidated = False  # R5-2: Allow trading again on new day
 
             except asyncio.CancelledError:
                 return
@@ -671,6 +674,10 @@ class SessionManager:
         # FAUDIT-9: Guard against executing after stop_session sets running=False.
         # This callback is fired by DataCollector and can race with stop teardown.
         if not pipeline.running:
+            return
+
+        # R5-2: Suppress trading after pre-close liquidation until market reopens.
+        if pipeline.liquidated:
             return
 
         # R4-2: Gate trading by market hours for schedule modes that require it.
