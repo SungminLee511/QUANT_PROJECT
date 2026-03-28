@@ -673,6 +673,15 @@ class SessionManager:
         if not pipeline.running:
             return
 
+        # R4-2: Gate trading by market hours for schedule modes that require it.
+        # "market_hours" and "market_hours_liquidate" should not trade when closed.
+        if (
+            pipeline.schedule_mode != "always_on"
+            and pipeline.calendar
+            and not pipeline.calendar.is_market_open()
+        ):
+            return
+
         try:
             # Check kill switch
             ks_key = session_channel(sid, "risk:kill_switch")
