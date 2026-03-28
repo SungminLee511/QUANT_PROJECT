@@ -856,7 +856,7 @@ def main(data: dict) -> np.ndarray:
             setStatus('Reset to default', 'idle');
             showFeedback(['<div class="ok-line">&#10003; Default config loaded</div>']);
         } catch(e) {
-            showFeedback([`<div class="err-line">Error: ${e.message}</div>`]);
+            showFeedback([`<div class="err-line">Error: ${escHtml(e.message)}</div>`]);
         }
     }
 
