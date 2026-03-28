@@ -35,7 +35,11 @@ def _read_env() -> dict[str, str]:
                 continue
             if "=" in line:
                 key, _, value = line.partition("=")
-                env[key.strip()] = value.strip()
+                # R2-15: Strip surrounding quotes — common .env convention
+                val = value.strip()
+                if len(val) >= 2 and val[0] == val[-1] and val[0] in ('"', "'"):
+                    val = val[1:-1]
+                env[key.strip()] = val
     return env
 
 
