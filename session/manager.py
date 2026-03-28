@@ -875,15 +875,21 @@ class SessionManager:
                     await asyncio.sleep(RESTART_DELAY)
                 else:
                     logger.error(
-                        "Session %s component '%s' exhausted retries",
+                        "Session %s component '%s' exhausted retries — stopping session",
                         session_id, component,
                     )
-                    await self._set_session_status(session_id, "error")
                     await self._publish_log(
                         session_id, "session_event",
-                        f"Component '{component}' crashed after {MAX_RESTART_ATTEMPTS} retries",
+                        f"Component '{component}' crashed after {MAX_RESTART_ATTEMPTS} retries — stopping session",
                         level="error",
                     )
+                    # R2-4: Stop the entire pipeline so we don't leave
+                    # zombie sessions with half-dead components.
+                    try:
+                        await self.stop_session(session_id)
+                    except Exception:
+                        logger.exception("Failed to stop session %s after component exhaustion", session_id)
+                    await self._set_session_status(session_id, "error")
 
     # ── Logging helper ─────────────────────────────────────────────
 
