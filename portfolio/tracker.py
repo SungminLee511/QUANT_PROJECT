@@ -289,7 +289,8 @@ class PortfolioTracker:
                             "symbol": s,
                             "quantity": p["quantity"],
                             "avg_entry_price": p["avg_entry_price"],
-                            "current_price": self._prices.get(s, 0.0),
+                            "current_price": self._prices.get(s, p["avg_entry_price"]),
+                            "exchange": p.get("exchange", ""),
                             "unrealized_pnl": p["quantity"] * (self._prices.get(s, p["avg_entry_price"]) - p["avg_entry_price"]),
                         }
                         for s, p in self._positions.items()
