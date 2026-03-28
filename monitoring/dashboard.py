@@ -144,7 +144,7 @@ def create_dashboard_router(
                 })
         except Exception as e:
             logger.exception("Error fetching orders")
-            return JSONResponse({"orders": [], "error": str(e)})
+            return JSONResponse({"orders": [], "error": "Internal server error"})
 
     @router.get("/api/equity-history")
     async def api_equity_history(request: Request, session_id: Optional[str] = Query(None)):
@@ -176,7 +176,7 @@ def create_dashboard_router(
                 })
         except Exception as e:
             logger.exception("Error fetching equity history")
-            return JSONResponse({"snapshots": [], "error": str(e)})
+            return JSONResponse({"snapshots": [], "error": "Internal server error"})
 
     @router.get("/api/status")
     async def api_status(request: Request, session_id: Optional[str] = Query(None)):
