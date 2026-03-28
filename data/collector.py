@@ -458,7 +458,7 @@ class DataCollector:
             buf = self._buffers[field_name]
             result[field_name] = buf[:, -lookback:].copy()  # [N, lookback] or [1, lookback]
 
-        result["tickers"] = self.symbols
+        result["tickers"] = list(self.symbols)  # R3-6: defensive copy
         return result
 
     def get_current_prices(self) -> np.ndarray | None:
