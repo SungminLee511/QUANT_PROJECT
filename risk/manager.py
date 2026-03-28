@@ -286,7 +286,14 @@ class RiskManager:
                 return
             self._warned_no_state = False
             if state:
+                # R4-5: Preserve peak_equity monotonicity (high-water mark).
+                # dict.update() would blindly overwrite with a potentially
+                # stale/lower value from a restarted tracker.
+                prev_peak = self._portfolio_state.get("peak_equity", 0)
                 self._portfolio_state.update(state)
+                new_peak = self._portfolio_state.get("peak_equity", 0)
+                if prev_peak > new_peak:
+                    self._portfolio_state["peak_equity"] = prev_peak
                 # Convert position_symbols back to a set (Redis returns lists)
                 raw_syms = self._portfolio_state.get("position_symbols")
                 if isinstance(raw_syms, (list, set, tuple)):
