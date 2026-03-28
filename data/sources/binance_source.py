@@ -131,8 +131,8 @@ class BinanceSource:
                 book = resp.json()
                 bids_list = book.get("bids") or []
                 asks_list = book.get("asks") or []
-                bid = float(bids_list[0][0]) if len(bids_list) > 0 and len(bids_list[0]) > 0 else 0.0
-                ask = float(asks_list[0][0]) if len(asks_list) > 0 and len(asks_list[0]) > 0 else 0.0
+                bid = float(bids_list[0][0]) if len(bids_list) > 0 and len(bids_list[0]) > 0 else np.nan
+                ask = float(asks_list[0][0]) if len(asks_list) > 0 and len(asks_list[0]) > 0 else np.nan
                 return symbol, bid, ask
 
             failed_count = 0
