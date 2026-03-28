@@ -562,8 +562,9 @@ class SessionManager:
                     ):
                         await self._liquidate_session(pipeline, starting_budget)
                         liquidated_today = True
-                        from datetime import date
-                        last_liquidation_date = date.today().isoformat()
+                        from datetime import datetime
+                        from zoneinfo import ZoneInfo
+                        last_liquidation_date = datetime.now(ZoneInfo("US/Eastern")).date().isoformat()
                         await self._publish_log(
                             sid, "schedule_event",
                             f"Pre-close liquidation triggered ({liquidate_minutes} min before close)",
@@ -572,8 +573,9 @@ class SessionManager:
                 else:
                     # FAUDIT-14: Only reset flag on a genuine new day, not transient
                     # is_market_open() returning False during market hours
-                    from datetime import date
-                    today = date.today().isoformat()
+                    from datetime import datetime
+                    from zoneinfo import ZoneInfo
+                    today = datetime.now(ZoneInfo("US/Eastern")).date().isoformat()
                     if last_liquidation_date and today != last_liquidation_date:
                         liquidated_today = False
 
