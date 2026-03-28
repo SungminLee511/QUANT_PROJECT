@@ -892,13 +892,15 @@ class SessionManager:
                         f"Component '{component}' crashed after {MAX_RESTART_ATTEMPTS} retries — stopping session",
                         level="error",
                     )
-                    # R2-4: Stop the entire pipeline so we don't leave
+                    # R2-4 + R3-1: Stop the entire pipeline so we don't leave
                     # zombie sessions with half-dead components.
+                    # Set status BEFORE stop_session, because stop_session cancels
+                    # the current task (CancelledError is BaseException, not Exception).
+                    await self._set_session_status(session_id, "error")
                     try:
                         await self.stop_session(session_id)
-                    except Exception:
-                        logger.exception("Failed to stop session %s after component exhaustion", session_id)
-                    await self._set_session_status(session_id, "error")
+                    except (asyncio.CancelledError, Exception):
+                        logger.debug("Expected cancellation during self-stop for session %s", session_id)
 
     # ── Logging helper ─────────────────────────────────────────────
 
