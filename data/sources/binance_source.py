@@ -50,9 +50,9 @@ class BinanceSource:
             highs = np.full(n, np.nan, dtype=np.float64)
             lows = np.full(n, np.nan, dtype=np.float64)
             closes = np.full(n, np.nan, dtype=np.float64)
-            volumes = np.zeros(n, dtype=np.float64)
+            volumes = np.full(n, np.nan, dtype=np.float64)
             vwaps = np.full(n, np.nan, dtype=np.float64)
-            num_trades = np.zeros(n, dtype=np.float64)
+            num_trades = np.full(n, np.nan, dtype=np.float64)
             day_change = np.full(n, np.nan, dtype=np.float64)
 
             try:
