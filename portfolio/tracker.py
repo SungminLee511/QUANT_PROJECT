@@ -86,6 +86,13 @@ class PortfolioTracker:
         try:
             update = OrderUpdate.model_validate(data)
 
+            # R3-10: Mark terminal non-fill statuses so their _last_filled
+            # entries get cleaned up (prevents slow memory leak).
+            if update.status in (OrderStatus.CANCELLED, OrderStatus.FAILED):
+                if update.order_id in self._last_filled:
+                    self._last_filled[update.order_id] = -1.0
+                return
+
             if update.status not in (OrderStatus.FILLED, OrderStatus.PARTIAL):
                 return
             if update.filled_qty <= 0 or update.avg_price <= 0:
