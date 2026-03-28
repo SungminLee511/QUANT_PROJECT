@@ -170,7 +170,7 @@ def create_backtest_router(
             logger.exception("Backtest failed")
             return JSONResponse({
                 "success": False,
-                "errors": [f"Backtest error: {str(e)}"],
+                "errors": ["Backtest failed — see server logs"],
             })
 
     @router.get("/api/load-code")
