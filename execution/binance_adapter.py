@@ -150,7 +150,9 @@ class BinanceAdapter(BaseExchangeAdapter):
             side=Side.BUY if result.get("side") == "BUY" else Side.SELL,
             status=status_map.get(result.get("status", ""), OrderStatus.PENDING),
             filled_qty=float(result.get("executedQty", 0)),
-            avg_price=float(result.get("avgPrice", 0) or result.get("price", 0)),
+            # R2-13: Convert to float first, then fallback. The raw API value
+            # "0.00000000" is a truthy string that bypasses `or` but becomes 0.0.
+            avg_price=float(result.get("avgPrice", 0)) or float(result.get("price", 0)),
             exchange=Exchange.BINANCE,
         )
 
