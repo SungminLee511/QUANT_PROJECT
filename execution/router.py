@@ -159,8 +159,11 @@ class OrderRouter:
             )
             return
 
-        # Track and persist
-        self._open_orders[order_id] = order
+        # Track and persist.
+        # R2-11: Don't track sim orders in _open_orders — they're instantly
+        # terminal and the poll task that cleans them up doesn't run in sim mode.
+        if self._sim_adapter is None:
+            self._open_orders[order_id] = order
         await self._persist_order(order)
 
         # Publish update
