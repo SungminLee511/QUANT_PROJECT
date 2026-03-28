@@ -753,12 +753,12 @@ def main(data: dict) -> np.ndarray:
                 lines.push('<div class="ok-line">&#10003; Strategy code is valid</div>');
             } else {
                 hasErrors = true;
-                data.errors.forEach(e => lines.push(`<div class="err-line">&#10007; Strategy: ${e}</div>`));
+                data.errors.forEach(e => lines.push(`<div class="err-line">&#10007; Strategy: ${escHtml(e)}</div>`));
             }
-            (data.warnings || []).forEach(w => lines.push(`<div class="warn-line">&#9888; ${w}</div>`));
+            (data.warnings || []).forEach(w => lines.push(`<div class="warn-line">&#9888; ${escHtml(w)}</div>`));
         } catch(e) {
             hasErrors = true;
-            lines.push(`<div class="err-line">&#10007; Strategy validation failed: ${e.message}</div>`);
+            lines.push(`<div class="err-line">&#10007; Strategy validation failed: ${escHtml(e.message)}</div>`);
         }
 
         // 2. Validate custom data functions
@@ -772,14 +772,14 @@ def main(data: dict) -> np.ndarray:
                 });
                 const data = await res.json();
                 if (data.valid) {
-                    lines.push(`<div class="ok-line">&#10003; Custom "${c.name}" is valid</div>`);
+                    lines.push(`<div class="ok-line">&#10003; Custom "${escHtml(c.name)}" is valid</div>`);
                 } else {
                     hasErrors = true;
-                    data.errors.forEach(e => lines.push(`<div class="err-line">&#10007; Custom "${c.name}": ${e}</div>`));
+                    data.errors.forEach(e => lines.push(`<div class="err-line">&#10007; Custom "${escHtml(c.name)}": ${escHtml(e)}</div>`));
                 }
             } catch(e) {
                 hasErrors = true;
-                lines.push(`<div class="err-line">&#10007; Custom "${c.name}" validation failed</div>`);
+                lines.push(`<div class="err-line">&#10007; Custom "${escHtml(c.name)}" validation failed</div>`);
             }
         }
 
@@ -820,16 +820,16 @@ def main(data: dict) -> np.ndarray:
             const data = await res.json();
             const lines = [];
             if (data.deployed) {
-                lines.push(`<div class="ok-line">&#10003; ${data.message}</div>`);
+                lines.push(`<div class="ok-line">&#10003; ${escHtml(data.message)}</div>`);
                 setStatus('Deployed', 'ok');
             } else {
                 setStatus('Deploy failed', 'err');
-                (data.errors || []).forEach(e => lines.push(`<div class="err-line">&#10007; ${e}</div>`));
+                (data.errors || []).forEach(e => lines.push(`<div class="err-line">&#10007; ${escHtml(e)}</div>`));
             }
             showFeedback(lines);
         } catch(e) {
             setStatus('Error', 'err');
-            showFeedback([`<div class="err-line">Network error: ${e.message}</div>`]);
+            showFeedback([`<div class="err-line">Network error: ${escHtml(e.message)}</div>`]);
         }
     }
 
