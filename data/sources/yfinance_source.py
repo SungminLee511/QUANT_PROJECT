@@ -216,7 +216,8 @@ class YFinanceSource:
                     _v = fi.get("lastVolume") if fi.get("lastVolume") is not None else fi.get("last_volume")
                     result["volume"][i] = float(_v) if _v is not None else 0.0
                 if "day_change_pct" in fields:
-                    if prev_close is not None and prev_close > 0:
+                    # R4-8: Use isnan checks (prev_close is np.nan, not None)
+                    if not np.isnan(prev_close) and not np.isnan(price) and prev_close > 0:
                         result["day_change_pct"][i] = ((price - prev_close) / prev_close) * 100
             except Exception:
                 logger.warning("yfinance fast_info fallback error for %s", symbol, exc_info=True)
