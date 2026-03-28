@@ -45,6 +45,9 @@ async def main():
     for task in tasks:
         task.cancel()
 
+    # R5-5: Await cancelled tasks so cleanup handlers run and resources are freed
+    await asyncio.gather(*tasks, return_exceptions=True)
+
     print("Shutdown complete.")
 
 
