@@ -66,7 +66,19 @@ class Reconciler:
         if not local_state:
             return
 
-        local_symbols = set(local_state.get("position_symbols", []))
+        # R2-7: Partition local symbols by exchange to avoid false positives
+        # (e.g. Alpaca-only symbols flagged as missing from Binance).
+        positions = local_state.get("positions", [])
+        binance_local: set[str] = set()
+        alpaca_local: set[str] = set()
+        for p in positions:
+            if abs(p.get("quantity", 0)) <= 0.0001:
+                continue
+            ex = p.get("exchange", "").lower()
+            if ex == "binance":
+                binance_local.add(p.get("symbol", ""))
+            elif ex == "alpaca":
+                alpaca_local.add(p.get("symbol", ""))
 
         # Reconcile Binance
         if self._binance:
@@ -75,7 +87,7 @@ class Reconciler:
                 exchange_symbols = {
                     p["symbol"] for p in exchange_positions if abs(p.get("quantity", 0)) > 0.0001
                 }
-                self._check_drift("Binance", local_symbols, exchange_symbols)
+                self._check_drift("Binance", binance_local, exchange_symbols)
             except Exception:
                 logger.exception("Binance reconciliation failed")
 
@@ -86,7 +98,7 @@ class Reconciler:
                 exchange_symbols = {
                     p["symbol"] for p in exchange_positions if abs(p.get("quantity", 0)) > 0.0001
                 }
-                self._check_drift("Alpaca", local_symbols, exchange_symbols)
+                self._check_drift("Alpaca", alpaca_local, exchange_symbols)
             except Exception:
                 logger.exception("Alpaca reconciliation failed")
 
