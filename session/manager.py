@@ -298,20 +298,27 @@ class SessionManager:
             # BUG-73: Restore kill switch state from DB in case Redis lost it
             ks_key = session_channel(session_id, "risk:kill_switch")
             ks = KillSwitch(self._redis, ks_key, session_id=session_id)
-            if await ks.restore_from_db():
-                logger.warning("Session %s: kill switch was active before restart — staying halted", session_id)
+            kill_switch_active = await ks.restore_from_db()
+            if kill_switch_active:
+                logger.warning("Session %s: kill switch was active before restart — starting in halted state", session_id)
 
             await self._start_pipeline(
                 pipeline, config_data, symbols, starting_budget,
                 strategy_code, data_config, custom_data_code,
             )
             try:
-                await self._set_session_status(session_id, "active")
+                # R2-9: Reflect kill switch state in DB status.  The pipeline
+                # infrastructure still starts (collector, tracker, etc.) so it
+                # can receive data and reconcile, but the session shows "halted"
+                # instead of a misleading "active".
+                status = "halted" if kill_switch_active else "active"
+                await self._set_session_status(session_id, status)
             except Exception:
                 logger.error("Session %s: pipeline started but DB status update failed", session_id, exc_info=True)
             await self._publish_log(
                 session_id, "session_event",
-                f"Session started (type={session_type.value}, symbols={symbols})",
+                f"Session started (type={session_type.value}, symbols={symbols})"
+                + (", kill switch ACTIVE — trading halted" if kill_switch_active else ""),
                 metadata={"symbols": symbols, "type": session_type.value, "budget": starting_budget},
             )
             logger.info("Session %s started (type=%s, symbols=%s)", session_id, session_type.value, symbols)
