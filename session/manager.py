@@ -340,8 +340,13 @@ class SessionManager:
             await self._publish_log(session_id, "session_event", "Session failed to start", level="error")
             return False
 
-    async def stop_session(self, session_id: str) -> bool:
-        """Stop a session's trading pipeline."""
+    async def stop_session(self, session_id: str, *, target_status: str = "stopped") -> bool:
+        """Stop a session's trading pipeline.
+
+        Args:
+            target_status: DB status to set after stopping (default "stopped").
+                           Pass "error" when stopping due to component exhaustion.
+        """
         pipeline = self._pipelines.get(session_id)
         if pipeline is None:
             return True
@@ -369,9 +374,9 @@ class SessionManager:
                 logger.warning("Error awaiting task cancellation for session %s", session_id, exc_info=True)
 
         self._pipelines.pop(session_id, None)
-        await self._set_session_status(session_id, "stopped")
-        await self._publish_log(session_id, "session_event", "Session stopped")
-        logger.info("Session %s stopped", session_id)
+        await self._set_session_status(session_id, target_status)
+        await self._publish_log(session_id, "session_event", f"Session {target_status}")
+        logger.info("Session %s %s", session_id, target_status)
         return True
 
     async def stop_all(self) -> None:
@@ -892,13 +897,12 @@ class SessionManager:
                         f"Component '{component}' crashed after {MAX_RESTART_ATTEMPTS} retries — stopping session",
                         level="error",
                     )
-                    # R2-4 + R3-1: Stop the entire pipeline so we don't leave
-                    # zombie sessions with half-dead components.
-                    # Set status BEFORE stop_session, because stop_session cancels
-                    # the current task (CancelledError is BaseException, not Exception).
-                    await self._set_session_status(session_id, "error")
+                    # R2-4 + R3-1 + R4-1: Stop the entire pipeline.
+                    # Pass target_status="error" so stop_session sets the
+                    # correct final status (previously it overwrote "error"
+                    # with "stopped").
                     try:
-                        await self.stop_session(session_id)
+                        await self.stop_session(session_id, target_status="error")
                     except (asyncio.CancelledError, Exception):
                         logger.debug("Expected cancellation during self-stop for session %s", session_id)
 
