@@ -175,13 +175,11 @@ class YFinanceSource:
         import yfinance as yf
 
         n = len(symbols)
-        # Initialize arrays — NaN for price fields, zero for volume
+        # R4-7: Initialize all arrays to NaN (including volume).
+        # Failed fetches should be NaN, not 0.0 which looks like real data.
         for field_name in fields:
             if field_name not in result:
-                if field_name == "volume":
-                    result[field_name] = np.zeros(n, dtype=np.float64)
-                else:
-                    result[field_name] = np.full(n, np.nan, dtype=np.float64)
+                result[field_name] = np.full(n, np.nan, dtype=np.float64)
 
         for i, symbol in enumerate(symbols):
             try:
