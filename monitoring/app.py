@@ -146,8 +146,10 @@ def create_app(config: dict) -> FastAPI:
         response = await call_next(request)
         # SEC-9: Content-Security-Policy — allow self + inline styles (needed for templates)
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+            "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
+            "img-src 'self' data:; "
             "connect-src 'self'; frame-ancestors 'none'"
         )
         # SEC-10: Clickjacking protection
