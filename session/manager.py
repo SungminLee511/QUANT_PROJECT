@@ -86,6 +86,13 @@ class SessionManager:
         self._config = config
         self._redis = redis
         self._pipelines: dict[str, SessionPipeline] = {}
+        self._session_locks: dict[str, asyncio.Lock] = {}  # R6-3: Per-session lock for start/stop
+
+    def _get_lock(self, session_id: str) -> asyncio.Lock:
+        """Get or create a per-session lock for serializing start/stop."""
+        if session_id not in self._session_locks:
+            self._session_locks[session_id] = asyncio.Lock()
+        return self._session_locks[session_id]
 
     # ── Public Accessors ─────────────────────────────────────────────
 
@@ -250,6 +257,12 @@ class SessionManager:
 
     async def start_session(self, session_id: str) -> bool:
         """Start a session's trading pipeline."""
+        # R6-3: Serialize start/stop per session to prevent duplicate pipelines
+        async with self._get_lock(session_id):
+            return await self._start_session_inner(session_id)
+
+    async def _start_session_inner(self, session_id: str) -> bool:
+        """Inner start logic — must be called under _get_lock(session_id)."""
         if session_id in self._pipelines and self._pipelines[session_id].running:
             logger.warning("Session %s already running", session_id)
             return True
@@ -344,10 +357,18 @@ class SessionManager:
     async def stop_session(self, session_id: str, *, target_status: str = "stopped") -> bool:
         """Stop a session's trading pipeline.
 
+        R6-3: Serialized with start_session via per-session lock.
+
         Args:
             target_status: DB status to set after stopping (default "stopped").
                            Pass "error" when stopping due to component exhaustion.
         """
+        # R6-3: Serialize with start_session to prevent orphaned tasks
+        async with self._get_lock(session_id):
+            return await self._stop_session_inner(session_id, target_status=target_status)
+
+    async def _stop_session_inner(self, session_id: str, *, target_status: str = "stopped") -> bool:
+        """Inner stop logic — must be called under _get_lock(session_id)."""
         pipeline = self._pipelines.get(session_id)
         if pipeline is None:
             return True
