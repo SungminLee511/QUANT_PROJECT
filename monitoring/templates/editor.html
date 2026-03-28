@@ -675,7 +675,9 @@ def main(data: dict) -> np.ndarray:
         const fb = document.getElementById('feedback');
         if (!lines || lines.length === 0) { fb.style.display = 'none'; return; }
         fb.style.display = 'block';
-        fb.innerHTML = lines.map(l => escHtml(l)).join('<br>');
+        // R2-10: Lines already contain intentional HTML (ok-line, err-line divs).
+        // escHtml() was double-escaping, rendering raw tags as visible text.
+        fb.innerHTML = lines.join('<br>');
     }
 
     function updateEditorLabel() {
