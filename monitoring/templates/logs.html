@@ -76,11 +76,12 @@
     const statusEl = document.getElementById('sseStatus');
 
     function fmtTime(isoStr) {
-        try {
-            const d = new Date(isoStr);
-            return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
-                   + '.' + String(d.getMilliseconds()).padStart(3, '0');
-        } catch { return '??:??:??.???'; }
+        const d = new Date(isoStr);
+        // R3-13: new Date(invalid) returns Invalid Date (no throw).
+        // Check explicitly so invalid timestamps show the fallback.
+        if (isNaN(d.getTime())) return '??:??:??.???';
+        return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+               + '.' + String(d.getMilliseconds()).padStart(3, '0');
     }
 
     function createEntryEl(entry) {
