@@ -113,8 +113,9 @@ def check_daily_loss(
     risk_cfg = config.get("risk", {})
     max_daily = risk_cfg.get("max_daily_loss_pct", 0.03)
 
-    # 0 means disabled by user
-    if not max_daily:
+    # 0 or negative means disabled (R4-9: `not -0.03` is False, letting
+    # negative values through and causing instant kill switch activation)
+    if max_daily <= 0:
         return True, ""
 
     daily_pnl = portfolio_state.get("daily_pnl", 0)
